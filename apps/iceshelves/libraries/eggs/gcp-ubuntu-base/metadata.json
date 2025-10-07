@@ -1,0 +1,29 @@
+{
+  "name": "gcp-ubuntu-base",
+  "display_name": "GCP Ubuntu Base",
+  "description": "Minimal Ubuntu 24.04 LTS configuration for Google Cloud Platform Compute Engine instances with gcloud CLI and automatic security updates",
+  "version": "1.0.0",
+  "author": "Penguin Tech Inc",
+  "category": "base",
+  "egg_type": "gcp-vm",
+  "tags": ["ubuntu", "gcp", "compute-engine", "base", "lts", "cloud"],
+  "requirements": {
+    "min_machine_type": "e2-micro",
+    "recommended_machine_type": "e2-small",
+    "image": {
+      "project": "ubuntu-os-cloud",
+      "family": "ubuntu-2404-lts",
+      "description": "Ubuntu 24.04 LTS"
+    },
+    "network": "default",
+    "service_account": null
+  },
+  "features": [
+    "Cloud-init enabled",
+    "Automatic security updates",
+    "Google Cloud SDK pre-installed",
+    "SSH key-based authentication only",
+    "GCP metadata service integration",
+    "Essential development tools included"
+  ]
+}

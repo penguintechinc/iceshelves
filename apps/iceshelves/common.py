@@ -95,7 +95,7 @@ class LXDClient:
         Initialize LXD client from cluster database record.
 
         Args:
-            cluster_record: Database record from lxd_clusters table
+            cluster_record: Database record from deployment_targets table
         """
         self.cluster = cluster_record
         self.client = None
@@ -261,6 +261,521 @@ class LXDClient:
             return False
         except Exception as e:
             logger.error(f"Error deleting instance {name}: {e}")
+            return False
+
+
+# ============================================================================
+# AWS EC2 CLIENT
+# ============================================================================
+
+class AWSEC2Client:
+    """
+    AWS EC2 client for deploying instances with cloud-init.
+
+    Uses boto3 to launch EC2 instances with cloud-init user-data.
+    """
+
+    def __init__(self, target_record: Any, secrets_manager=None):
+        """
+        Initialize AWS EC2 client from deployment target record.
+
+        Args:
+            target_record: Database record from deployment_targets table
+            secrets_manager: SecretsManager instance for retrieving credentials
+        """
+        self.target = target_record
+        self.secrets_manager = secrets_manager
+        self.client = None
+        self.ec2_resource = None
+
+        try:
+            import boto3
+            from botocore.exceptions import ClientError, BotoCoreError
+
+            self.boto3 = boto3
+            self.ClientError = ClientError
+            self.BotoCoreError = BotoCoreError
+
+        except ImportError:
+            raise ConnectionError("boto3 library not available")
+
+        # Get cloud configuration
+        self.cloud_config = target_record.cloud_config or {}
+        self.region = self.cloud_config.get('region', os.getenv('AWS_DEFAULT_REGION', 'us-east-1'))
+
+    def connect(self) -> bool:
+        """
+        Establish connection to AWS EC2.
+
+        Returns:
+            True if connection successful, False otherwise
+        """
+        try:
+            # Check for credentials in cloud_config or environment
+            aws_access_key = self.cloud_config.get('aws_access_key_id')
+            aws_secret_key = self.cloud_config.get('aws_secret_access_key')
+
+            if aws_access_key and aws_secret_key:
+                # Use explicit credentials
+                self.client = self.boto3.client(
+                    'ec2',
+                    region_name=self.region,
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key
+                )
+                self.ec2_resource = self.boto3.resource(
+                    'ec2',
+                    region_name=self.region,
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key
+                )
+            else:
+                # Use IAM role or environment credentials
+                self.client = self.boto3.client('ec2', region_name=self.region)
+                self.ec2_resource = self.boto3.resource('ec2', region_name=self.region)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to AWS EC2: {e}")
+            return False
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """
+        Test connection to AWS EC2.
+
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            if not self.client:
+                if not self.connect():
+                    return False, "Failed to establish connection"
+
+            # Try to describe regions to test credentials
+            response = self.client.describe_regions()
+            return True, f"Connected successfully to AWS EC2 in region {self.region}"
+
+        except Exception as e:
+            return False, str(e)
+
+    def launch_instance(
+        self,
+        name: str,
+        ami: str,
+        instance_type: str,
+        user_data: str,
+        security_groups: Optional[List[str]] = None,
+        subnet_id: Optional[str] = None,
+        key_name: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        wait: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Launch an EC2 instance with cloud-init user-data.
+
+        Args:
+            name: Instance name (set as Name tag)
+            ami: AMI ID (e.g., ami-xxxxx for Ubuntu 24.04)
+            instance_type: Instance type (e.g., t3.micro, t3.small)
+            user_data: Cloud-init user-data script
+            security_groups: List of security group IDs
+            subnet_id: Subnet ID for VPC
+            key_name: SSH key pair name
+            tags: Additional tags for the instance
+            wait: Wait for instance to be running
+
+        Returns:
+            Instance information dict if successful, None otherwise
+        """
+        try:
+            # Build launch parameters
+            launch_params = {
+                'ImageId': ami,
+                'InstanceType': instance_type,
+                'UserData': user_data,
+                'MinCount': 1,
+                'MaxCount': 1,
+                'TagSpecifications': [
+                    {
+                        'ResourceType': 'instance',
+                        'Tags': [
+                            {'Key': 'Name', 'Value': name},
+                            {'Key': 'ManagedBy', 'Value': 'IceShelves'}
+                        ]
+                    }
+                ]
+            }
+
+            # Add optional parameters
+            if security_groups:
+                launch_params['SecurityGroupIds'] = security_groups
+
+            if subnet_id:
+                launch_params['SubnetId'] = subnet_id
+
+            if key_name:
+                launch_params['KeyName'] = key_name
+
+            # Add additional tags
+            if tags:
+                for key, value in tags.items():
+                    launch_params['TagSpecifications'][0]['Tags'].append({'Key': key, 'Value': value})
+
+            # Launch instance
+            response = self.client.run_instances(**launch_params)
+
+            instance_id = response['Instances'][0]['InstanceId']
+            logger.info(f"Launched EC2 instance {instance_id} ({name})")
+
+            # Wait for instance to be running if requested
+            if wait:
+                logger.info(f"Waiting for instance {instance_id} to be running...")
+                waiter = self.client.get_waiter('instance_running')
+                waiter.wait(InstanceIds=[instance_id])
+
+            # Get full instance details
+            instance = self.get_instance(instance_id)
+
+            return instance
+
+        except (self.ClientError, self.BotoCoreError) as e:
+            logger.error(f"Failed to launch EC2 instance {name}: {e}")
+            raise DeploymentError(f"AWS EC2 error: {e}")
+
+    def get_instance(self, instance_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get instance details by ID.
+
+        Args:
+            instance_id: EC2 instance ID
+
+        Returns:
+            Instance information dict or None
+        """
+        try:
+            response = self.client.describe_instances(InstanceIds=[instance_id])
+
+            if response['Reservations']:
+                instance_data = response['Reservations'][0]['Instances'][0]
+
+                # Parse into consistent format
+                return {
+                    'instance_id': instance_data['InstanceId'],
+                    'name': next((tag['Value'] for tag in instance_data.get('Tags', []) if tag['Key'] == 'Name'), None),
+                    'state': instance_data['State']['Name'],
+                    'instance_type': instance_data['InstanceType'],
+                    'public_ip': instance_data.get('PublicIpAddress'),
+                    'private_ip': instance_data.get('PrivateIpAddress'),
+                    'launch_time': instance_data['LaunchTime'].isoformat() if instance_data.get('LaunchTime') else None,
+                    'availability_zone': instance_data['Placement']['AvailabilityZone'],
+                    'architecture': instance_data.get('Architecture'),
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting EC2 instance {instance_id}: {e}")
+            return None
+
+    def terminate_instance(self, instance_id: str, wait: bool = True) -> bool:
+        """
+        Terminate an EC2 instance.
+
+        Args:
+            instance_id: EC2 instance ID
+            wait: Wait for termination to complete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.client.terminate_instances(InstanceIds=[instance_id])
+            logger.info(f"Terminated EC2 instance {instance_id}")
+
+            if wait:
+                waiter = self.client.get_waiter('instance_terminated')
+                waiter.wait(InstanceIds=[instance_id])
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error terminating EC2 instance {instance_id}: {e}")
+            return False
+
+
+# ============================================================================
+# GCP COMPUTE ENGINE CLIENT
+# ============================================================================
+
+class GCPComputeClient:
+    """
+    GCP Compute Engine client for deploying instances with cloud-init.
+
+    Uses google-cloud-compute to create VM instances with startup scripts.
+    """
+
+    def __init__(self, target_record: Any, secrets_manager=None):
+        """
+        Initialize GCP Compute Engine client from deployment target record.
+
+        Args:
+            target_record: Database record from deployment_targets table
+            secrets_manager: SecretsManager instance for retrieving credentials
+        """
+        self.target = target_record
+        self.secrets_manager = secrets_manager
+        self.client = None
+
+        try:
+            from google.cloud import compute_v1
+
+            self.compute_v1 = compute_v1
+
+        except ImportError:
+            raise ConnectionError("google-cloud-compute library not available")
+
+        # Get cloud configuration
+        self.cloud_config = target_record.cloud_config or {}
+        self.project_id = self.cloud_config.get('project_id', os.getenv('GCP_PROJECT_ID'))
+        self.zone = self.cloud_config.get('zone', 'us-central1-a')
+
+        if not self.project_id:
+            raise ValueError("GCP project_id is required")
+
+    def connect(self) -> bool:
+        """
+        Establish connection to GCP Compute Engine.
+
+        Returns:
+            True if connection successful, False otherwise
+        """
+        try:
+            # Initialize Compute Engine client
+            # Uses Application Default Credentials or GOOGLE_APPLICATION_CREDENTIALS env var
+            self.client = self.compute_v1.InstancesClient()
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to GCP Compute Engine: {e}")
+            return False
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """
+        Test connection to GCP Compute Engine.
+
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            if not self.client:
+                if not self.connect():
+                    return False, "Failed to establish connection"
+
+            # Try to list instances to test credentials
+            request = self.compute_v1.ListInstancesRequest(
+                project=self.project_id,
+                zone=self.zone
+            )
+            _ = self.client.list(request=request)
+
+            return True, f"Connected successfully to GCP Compute Engine in project {self.project_id}"
+
+        except Exception as e:
+            return False, str(e)
+
+    def create_instance(
+        self,
+        name: str,
+        machine_type: str,
+        image_project: str,
+        image_family: str,
+        startup_script: str,
+        network: str = 'default',
+        tags: Optional[List[str]] = None,
+        labels: Optional[Dict[str, str]] = None,
+        wait: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Create a GCP VM instance with cloud-init startup script.
+
+        Args:
+            name: Instance name
+            machine_type: Machine type (e.g., e2-micro, e2-small)
+            image_project: Project containing the image (e.g., ubuntu-os-cloud)
+            image_family: Image family (e.g., ubuntu-2404-lts)
+            startup_script: Cloud-init startup script
+            network: VPC network name
+            tags: Network tags for firewall rules
+            labels: Instance labels
+            wait: Wait for instance to be created
+
+        Returns:
+            Instance information dict if successful, None otherwise
+        """
+        try:
+            # Get image
+            image_client = self.compute_v1.ImagesClient()
+            image = image_client.get_from_family(project=image_project, family=image_family)
+
+            # Build machine type URL
+            machine_type_url = f"zones/{self.zone}/machineTypes/{machine_type}"
+
+            # Build network interface
+            network_interface = self.compute_v1.NetworkInterface(
+                name=network,
+                access_configs=[
+                    self.compute_v1.AccessConfig(
+                        name="External NAT",
+                        type_="ONE_TO_ONE_NAT"
+                    )
+                ]
+            )
+
+            # Build metadata with startup script (cloud-init)
+            metadata_items = [
+                self.compute_v1.Items(key="startup-script", value=startup_script),
+                self.compute_v1.Items(key="enable-oslogin", value="TRUE")
+            ]
+
+            # Build instance configuration
+            instance = self.compute_v1.Instance(
+                name=name,
+                machine_type=machine_type_url,
+                disks=[
+                    self.compute_v1.AttachedDisk(
+                        boot=True,
+                        auto_delete=True,
+                        initialize_params=self.compute_v1.AttachedDiskInitializeParams(
+                            source_image=image.self_link,
+                            disk_size_gb=10
+                        )
+                    )
+                ],
+                network_interfaces=[network_interface],
+                metadata=self.compute_v1.Metadata(items=metadata_items),
+                tags=self.compute_v1.Tags(items=tags or []),
+                labels=labels or {'managed-by': 'iceshelves'}
+            )
+
+            # Create instance
+            request = self.compute_v1.InsertInstanceRequest(
+                project=self.project_id,
+                zone=self.zone,
+                instance_resource=instance
+            )
+
+            operation = self.client.insert(request=request)
+
+            logger.info(f"Launched GCP instance {name}")
+
+            # Wait for operation to complete if requested
+            if wait:
+                logger.info(f"Waiting for instance {name} to be created...")
+                operation_client = self.compute_v1.ZoneOperationsClient()
+                while True:
+                    result = operation_client.get(
+                        project=self.project_id,
+                        zone=self.zone,
+                        operation=operation.name
+                    )
+                    if result.status == self.compute_v1.Operation.Status.DONE:
+                        if result.error:
+                            raise DeploymentError(f"Instance creation failed: {result.error}")
+                        break
+
+            # Get full instance details
+            instance_info = self.get_instance(name)
+
+            return instance_info
+
+        except Exception as e:
+            logger.error(f"Failed to create GCP instance {name}: {e}")
+            raise DeploymentError(f"GCP Compute Engine error: {e}")
+
+    def get_instance(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get instance details by name.
+
+        Args:
+            name: Instance name
+
+        Returns:
+            Instance information dict or None
+        """
+        try:
+            request = self.compute_v1.GetInstanceRequest(
+                project=self.project_id,
+                zone=self.zone,
+                instance=name
+            )
+
+            instance = self.client.get(request=request)
+
+            # Parse network interfaces for IPs
+            network_interface = instance.network_interfaces[0] if instance.network_interfaces else None
+            external_ip = None
+            internal_ip = None
+
+            if network_interface:
+                internal_ip = network_interface.network_i_p
+                if network_interface.access_configs:
+                    external_ip = network_interface.access_configs[0].nat_i_p
+
+            return {
+                'name': instance.name,
+                'instance_id': str(instance.id),
+                'status': instance.status,
+                'machine_type': instance.machine_type.split('/')[-1],
+                'zone': instance.zone.split('/')[-1],
+                'internal_ip': internal_ip,
+                'external_ip': external_ip,
+                'creation_timestamp': instance.creation_timestamp,
+                'labels': dict(instance.labels) if instance.labels else {}
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting GCP instance {name}: {e}")
+            return None
+
+    def delete_instance(self, name: str, wait: bool = True) -> bool:
+        """
+        Delete a GCP VM instance.
+
+        Args:
+            name: Instance name
+            wait: Wait for deletion to complete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            request = self.compute_v1.DeleteInstanceRequest(
+                project=self.project_id,
+                zone=self.zone,
+                instance=name
+            )
+
+            operation = self.client.delete(request=request)
+
+            logger.info(f"Deleted GCP instance {name}")
+
+            if wait:
+                operation_client = self.compute_v1.ZoneOperationsClient()
+                while True:
+                    result = operation_client.get(
+                        project=self.project_id,
+                        zone=self.zone,
+                        operation=operation.name
+                    )
+                    if result.status == self.compute_v1.Operation.Status.DONE:
+                        break
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting GCP instance {name}: {e}")
             return False
 
 
@@ -496,7 +1011,7 @@ def verify_agent_key(cluster_id: int, provided_key: str) -> bool:
     Returns:
         True if key is valid, False otherwise
     """
-    cluster = db.lxd_clusters[cluster_id]
+    cluster = db.deployment_targets[cluster_id]
     if not cluster:
         return False
 
@@ -517,7 +1032,7 @@ def get_pending_deployments_for_agent(cluster_id: int) -> List[Dict[str, Any]]:
         List of deployment records ready for agent
     """
     deployments = db(
-        (db.deployments.cluster_id == cluster_id) &
+        (db.deployments.target_id == cluster_id) &
         (db.deployments.status == 'pending')
     ).select()
 
@@ -546,7 +1061,7 @@ def get_pending_deployments_for_agent(cluster_id: int) -> List[Dict[str, Any]]:
 
 def update_agent_last_seen(cluster_id: int):
     """Update the last seen timestamp for an agent."""
-    cluster = db.lxd_clusters[cluster_id]
+    cluster = db.deployment_targets[cluster_id]
     if cluster and cluster.connection_method == 'agent-poll':
         cluster.update_record(agent_last_seen=datetime.utcnow())
         db.commit()
@@ -623,7 +1138,7 @@ def check_cluster_health(cluster_id: int) -> Tuple[str, Dict[str, Any]]:
     Returns:
         Tuple of (status, details)
     """
-    cluster = db.lxd_clusters[cluster_id]
+    cluster = db.deployment_targets[cluster_id]
     if not cluster:
         return 'error', {'message': 'Cluster not found'}
 

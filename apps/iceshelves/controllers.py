@@ -101,7 +101,7 @@ def index():
     # Get statistics
     stats = {
         'total_eggs': db(db.eggs.is_active == True).count(),
-        'total_clusters': db(db.lxd_clusters.is_active == True).count(),
+        'total_targets': db(db.deployment_targets.is_active == True).count(),
         'total_deployments': db(db.deployments).count(),
         'active_deployments': db(db.deployments.status.belongs(['pending', 'in_progress'])).count(),
         'successful_deployments': db(db.deployments.status == 'completed').count(),
@@ -115,7 +115,7 @@ def index():
     )
 
     # Active clusters
-    active_clusters = db(db.lxd_clusters.is_active == True).select()
+    active_clusters = db(db.deployment_targets.is_active == True).select()
 
     return dict(
         stats=stats,
@@ -256,7 +256,7 @@ def eggs_create():
 @action.uses('clusters/list.html', session, db)
 def clusters_list():
     """List all clusters."""
-    clusters = db(db.lxd_clusters).select(orderby=db.lxd_clusters.name)
+    clusters = db(db.deployment_targets).select(orderby=db.deployment_targets.name)
 
     return dict(clusters=clusters)
 
@@ -265,7 +265,7 @@ def clusters_list():
 @action.uses('clusters/view.html', session, db)
 def clusters_view(cluster_id):
     """View cluster details."""
-    cluster = db.lxd_clusters[cluster_id]
+    cluster = db.deployment_targets[cluster_id]
     if not cluster:
         abort(404, "Cluster not found")
 
@@ -273,7 +273,7 @@ def clusters_view(cluster_id):
     status, details = common.check_cluster_health(cluster_id)
 
     # Get deployments for this cluster
-    deployments = db(db.deployments.cluster_id == cluster_id).select(
+    deployments = db(db.deployments.target_id == cluster_id).select(
         orderby=~db.deployments.created_on,
         limitby=(0, 20)
     )
@@ -337,12 +337,12 @@ def clusters_add():
             })
 
         # Insert cluster
-        cluster_id = db.lxd_clusters.insert(**cluster_data)
+        cluster_id = db.deployment_targets.insert(**cluster_data)
         db.commit()
 
         # Test connection (except for agent-poll)
         if connection_method != 'agent-poll':
-            cluster = db.lxd_clusters[cluster_id]
+            cluster = db.deployment_targets[cluster_id]
             status, message = common.check_cluster_health(cluster_id)
             cluster.update_record(status=status, last_check=datetime.utcnow())
             db.commit()
@@ -360,7 +360,7 @@ def clusters_test(cluster_id):
     status, details = common.check_cluster_health(cluster_id)
 
     # Update cluster status
-    cluster = db.lxd_clusters[cluster_id]
+    cluster = db.deployment_targets[cluster_id]
     if cluster:
         cluster.update_record(status=status, last_check=datetime.utcnow())
         db.commit()
@@ -383,7 +383,7 @@ def deploy(egg_id=None):
         instance_name = request.forms.get('instance_name')
 
         egg = db.eggs[egg_id]
-        cluster = db.lxd_clusters[cluster_id]
+        cluster = db.deployment_targets[cluster_id]
 
         if not egg or not cluster:
             response.flash = "Egg or cluster not found"
@@ -392,13 +392,25 @@ def deploy(egg_id=None):
         # Load egg cloud-init
         files = common.load_egg_files(egg)
 
+        # Determine deployment type based on egg type and target provider
+        if egg.egg_type == 'aws-ec2':
+            deployment_type = 'aws-ec2'
+        elif egg.egg_type == 'gcp-vm':
+            deployment_type = 'gcp-vm'
+        elif egg.egg_type == 'lxd-container':
+            deployment_type = 'lxd'
+        elif egg.egg_type == 'kvm-vm':
+            deployment_type = 'kvm'
+        else:
+            deployment_type = cluster.provider_type  # Fall back to provider type
+
         # Create deployment record
         deployment_id = db.deployments.insert(
             egg_id=egg_id,
-            cluster_id=cluster_id,
+            target_id=cluster_id,
             instance_name=instance_name,
             status='pending',
-            deployment_type='lxd' if egg.egg_type == 'lxd-container' else 'kvm',
+            deployment_type=deployment_type,
             cloud_init_data=files['cloud_init'],
             deployed_by=session.get('user', 'anonymous'),
             started_at=datetime.utcnow(),
@@ -408,54 +420,130 @@ def deploy(egg_id=None):
         # Log deployment initiation
         common.log_deployment(deployment_id, 'INFO', f'Deployment initiated for instance {instance_name}')
 
-        # For agent-based deployments, just mark as pending
+        # For agent-based deployments (LXD only), just mark as pending
         # Agent will pick it up on next poll
-        if cluster.connection_method == 'agent-poll':
+        if cluster.provider_type == 'lxd' and cluster.connection_method == 'agent-poll':
             response.flash = f"Deployment queued for agent pickup. Instance: {instance_name}"
             redirect(URL(f'deployments/view/{deployment_id}'))
         else:
-            # For direct/SSH deployments, trigger immediately
+            # For direct deployments (LXD, AWS, GCP), trigger immediately
             # TODO: Implement async deployment with background tasks
             try:
                 # Update status
                 common.update_deployment_status(deployment_id, 'in_progress')
 
-                # Create LXD client
-                client = common.LXDClient(cluster)
-                if not client.connect():
-                    raise common.ConnectionError("Failed to connect to cluster")
+                # Route to appropriate provider client
+                if cluster.provider_type == 'lxd':
+                    # LXD deployment
+                    client = common.LXDClient(cluster)
+                    if not client.connect():
+                        raise common.ConnectionError("Failed to connect to LXD cluster")
 
-                # Create instance
-                source = {'type': 'image', 'alias': egg.base_image}
-                config = {'user.cloud-init.user-data': files['cloud_init']}
+                    # Create instance
+                    source = {'type': 'image', 'alias': egg.base_image}
+                    config = {'user.cloud-init.user-data': files['cloud_init']}
 
-                instance = client.create_instance(
-                    name=instance_name,
-                    source=source,
-                    config=config,
-                    wait=True
-                )
+                    instance = client.create_instance(
+                        name=instance_name,
+                        source=source,
+                        config=config,
+                        wait=True
+                    )
 
-                # Start instance
-                instance.start(wait=True)
+                    # Start instance
+                    instance.start(wait=True)
 
-                # Update deployment
-                common.update_deployment_status(
-                    deployment_id,
-                    'completed',
-                    instance_info={
-                        'name': instance.name,
-                        'status': instance.status,
-                        'architecture': instance.architecture,
-                    }
-                )
+                    # Update deployment
+                    common.update_deployment_status(
+                        deployment_id,
+                        'completed',
+                        instance_info={
+                            'name': instance.name,
+                            'status': instance.status,
+                            'architecture': instance.architecture,
+                        }
+                    )
+
+                elif cluster.provider_type == 'aws':
+                    # AWS EC2 deployment
+                    from secrets import get_secrets_manager
+                    secrets_mgr = get_secrets_manager(cluster.as_dict(), db, cluster_id)
+
+                    client = common.AWSEC2Client(cluster, secrets_mgr)
+                    if not client.connect():
+                        raise common.ConnectionError("Failed to connect to AWS EC2")
+
+                    # Get AWS configuration from cloud_config
+                    cloud_config = cluster.cloud_config or {}
+                    ami = cloud_config.get('ami', 'ami-0e2c8caa4b6378d8c')  # Ubuntu 24.04 LTS default
+                    instance_type = cloud_config.get('instance_type', 't3.micro')
+                    security_groups = cloud_config.get('security_groups', [])
+                    subnet_id = cloud_config.get('subnet_id')
+                    key_name = cloud_config.get('key_name')
+
+                    # Launch instance with cloud-init user-data
+                    instance = client.launch_instance(
+                        name=instance_name,
+                        ami=ami,
+                        instance_type=instance_type,
+                        user_data=files['cloud_init'],
+                        security_groups=security_groups,
+                        subnet_id=subnet_id,
+                        key_name=key_name,
+                        wait=True
+                    )
+
+                    # Update deployment
+                    common.update_deployment_status(
+                        deployment_id,
+                        'completed',
+                        instance_info=instance
+                    )
+
+                elif cluster.provider_type == 'gcp':
+                    # GCP Compute Engine deployment
+                    from secrets import get_secrets_manager
+                    secrets_mgr = get_secrets_manager(cluster.as_dict(), db, cluster_id)
+
+                    client = common.GCPComputeClient(cluster, secrets_mgr)
+                    if not client.connect():
+                        raise common.ConnectionError("Failed to connect to GCP Compute Engine")
+
+                    # Get GCP configuration from cloud_config
+                    cloud_config = cluster.cloud_config or {}
+                    machine_type = cloud_config.get('machine_type', 'e2-micro')
+                    image_project = cloud_config.get('image_project', 'ubuntu-os-cloud')
+                    image_family = cloud_config.get('image_family', 'ubuntu-2404-lts')
+                    network = cloud_config.get('network', 'default')
+
+                    # Create instance with cloud-init startup script
+                    instance = client.create_instance(
+                        name=instance_name,
+                        machine_type=machine_type,
+                        image_project=image_project,
+                        image_family=image_family,
+                        startup_script=files['cloud_init'],
+                        network=network,
+                        wait=True
+                    )
+
+                    # Update deployment
+                    common.update_deployment_status(
+                        deployment_id,
+                        'completed',
+                        instance_info=instance
+                    )
+
+                else:
+                    raise ValueError(f"Unknown provider type: {cluster.provider_type}")
 
                 common.log_deployment(deployment_id, 'INFO', f'Deployment completed successfully')
 
                 if settings.ENABLE_METRICS:
-                    DEPLOYMENT_COUNT.labels(status='completed', type='lxd').inc()
+                    DEPLOYMENT_COUNT.labels(status='completed', type=deployment_type).inc()
 
                 response.flash = f"Instance '{instance_name}' deployed successfully!"
+
             except Exception as e:
                 logger.error(f"Deployment failed: {e}")
                 common.update_deployment_status(deployment_id, 'failed', error_message=str(e))
@@ -470,7 +558,7 @@ def deploy(egg_id=None):
 
     # GET request - show deployment form
     eggs = db(db.eggs.is_active == True).select(orderby=db.eggs.name)
-    clusters = db(db.lxd_clusters.is_active == True).select(orderby=db.lxd_clusters.name)
+    clusters = db(db.deployment_targets.is_active == True).select(orderby=db.deployment_targets.name)
 
     selected_egg = db.eggs[egg_id] if egg_id else None
 
@@ -498,7 +586,7 @@ def deployments_list():
         query &= (db.deployments.status == status)
 
     if cluster_id:
-        query &= (db.deployments.cluster_id == int(cluster_id))
+        query &= (db.deployments.target_id == int(cluster_id))
 
     # Get deployments
     total_deployments = db(query).count()
@@ -529,7 +617,7 @@ def deployments_view(deployment_id):
 
     # Get egg and cluster
     egg = db.eggs[deployment.egg_id]
-    cluster = db.lxd_clusters[deployment.cluster_id]
+    cluster = db.deployment_targets[deployment.target_id]
 
     # Get logs
     logs = db(db.deployment_logs.deployment_id == deployment_id).select(
@@ -579,7 +667,7 @@ def api_agent_status(deployment_id):
 
     # Verify agent key
     agent_key = request.get_header('X-Agent-Key')
-    cluster = db.lxd_clusters[deployment.cluster_id]
+    cluster = db.deployment_targets[deployment.target_id]
 
     if not agent_key or not cluster or cluster.agent_key != agent_key:
         response.status = 401

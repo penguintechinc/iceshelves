@@ -55,3 +55,9 @@ pylxd==2.3.4
 libvirt-python==10.10.0
 PyYAML==6.0.2
 Jinja2==3.1.5
+
+# Cloud Providers & Secrets Management
+boto3==1.35.98                          # AWS SDK (EC2, Secrets Manager)
+google-cloud-secret-manager==2.21.2     # GCP Secrets Manager
+google-cloud-compute==1.21.0            # GCP Compute Engine
+infisical-python==2.1.8                 # Infisical Secrets Management

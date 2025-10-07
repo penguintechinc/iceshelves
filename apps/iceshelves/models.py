@@ -28,19 +28,25 @@ db = DAL(
 )
 
 # Egg Types
-EGG_TYPES = ['lxd-container', 'kvm-vm', 'hybrid']
+EGG_TYPES = ['lxd-container', 'kvm-vm', 'aws-ec2', 'gcp-vm', 'hybrid']
+
+# Provider Types
+PROVIDER_TYPES = ['lxd', 'aws', 'gcp']
 
 # Deployment Status
 DEPLOYMENT_STATUS = ['pending', 'in_progress', 'completed', 'failed', 'cancelled', 'timeout']
 
-# Cluster Status
+# Cluster/Target Status
 CLUSTER_STATUS = ['active', 'inactive', 'error', 'unknown']
 
 # LXD Cluster Authentication Types
 AUTH_TYPES = ['tls', 'certificate', 'candid', 'rbac']
 
-# Connection Methods
+# Connection Methods (for LXD)
 CONNECTION_METHODS = ['direct-api', 'ssh', 'agent-poll']
+
+# Secrets Manager Types
+SECRETS_MANAGER_TYPES = ['database', 'aws', 'gcp', 'infisical']
 
 # Template Categories
 TEMPLATE_CATEGORIES = ['base', 'webserver', 'database', 'kubernetes', 'docker', 'custom']
@@ -95,6 +101,19 @@ db.define_table(
     Field('tags', 'list:string',
           label='Tags',
           comment='Tags for search and categorization'),
+    # Docker Compose-style features
+    Field('compose_template', 'text',
+          label='Compose Template',
+          comment='Docker Compose-style YAML for multi-instance deployments'),
+    Field('build_context', 'json',
+          label='Build Context',
+          comment='Build context configuration (environment vars, volumes, networks)'),
+    Field('service_dependencies', 'list:string',
+          label='Service Dependencies',
+          comment='List of other egg names this egg depends on'),
+    Field('healthcheck_config', 'json',
+          label='Health Check Configuration',
+          comment='Docker-style health check configuration'),
     Field('created_on', 'datetime', default=lambda: __import__('datetime').datetime.utcnow(),
           writable=False, readable=True),
     Field('updated_on', 'datetime', update=lambda: __import__('datetime').datetime.utcnow(),
@@ -103,19 +122,22 @@ db.define_table(
 )
 
 # ============================================================================
-# LXD CLUSTERS - Connection Configuration
+# DEPLOYMENT TARGETS - LXD Clusters, AWS, GCP Configuration
 # ============================================================================
 db.define_table(
-    'lxd_clusters',
+    'deployment_targets',
     Field('name', 'string', requires=IS_NOT_EMPTY(), unique=True,
-          label='Cluster Name',
-          comment='Unique name for this LXD cluster or host'),
+          label='Target Name',
+          comment='Unique name for this deployment target'),
     Field('description', 'text',
           label='Description',
-          comment='Description of this cluster'),
-    Field('connection_method', 'string', requires=IS_IN_SET(CONNECTION_METHODS), default='direct-api',
-          label='Connection Method',
-          comment='How to connect: direct-api (LXD API), ssh (SSH tunnel), or agent-poll (polling agent)'),
+          comment='Description of this deployment target'),
+    Field('provider_type', 'string', requires=IS_IN_SET(PROVIDER_TYPES), default='lxd',
+          label='Provider Type',
+          comment='Infrastructure provider: lxd, aws, or gcp'),
+    Field('connection_method', 'string', requires=IS_EMPTY_OR(IS_IN_SET(CONNECTION_METHODS)),
+          label='Connection Method (LXD only)',
+          comment='For LXD: direct-api, ssh, or agent-poll'),
     Field('endpoint_url', 'string', requires=IS_EMPTY_OR(IS_URL()),
           label='Endpoint URL',
           comment='LXD API endpoint (e.g., https://lxd-host:8443) - for direct-api method'),
@@ -140,9 +162,21 @@ db.define_table(
     Field('agent_last_seen', 'datetime',
           label='Agent Last Seen',
           comment='Last time agent checked in - for agent-poll method'),
+    # Secrets Management
+    Field('secrets_manager_type', 'string', requires=IS_IN_SET(SECRETS_MANAGER_TYPES), default='database',
+          label='Secrets Manager',
+          comment='Where to store sensitive credentials: database, aws, gcp, or infisical'),
+    Field('secrets_config', 'json',
+          label='Secrets Configuration',
+          comment='Configuration for secrets manager (secret IDs, project IDs, etc.)'),
+    # Cloud Provider Configuration (AWS/GCP)
+    Field('cloud_config', 'json',
+          label='Cloud Provider Configuration',
+          comment='AWS/GCP specific configuration (region, zone, credentials path, etc.)'),
+    # LXD Authentication (for LXD provider only)
     Field('auth_type', 'string', requires=IS_IN_SET(AUTH_TYPES), default='certificate',
           label='Authentication Type',
-          comment='Type of authentication to use - for direct-api method'),
+          comment='Type of authentication to use - for LXD direct-api method'),
     Field('client_cert', 'text',
           label='Client Certificate',
           comment='PEM-encoded client certificate for TLS authentication'),
@@ -188,9 +222,9 @@ db.define_table(
     Field('egg_id', 'reference eggs', requires=IS_IN_DB(db, 'eggs.id', '%(name)s'),
           label='Egg',
           comment='The egg being deployed'),
-    Field('cluster_id', 'reference lxd_clusters', requires=IS_IN_DB(db, 'lxd_clusters.id', '%(name)s'),
-          label='Cluster',
-          comment='Target cluster for deployment'),
+    Field('target_id', 'reference deployment_targets', requires=IS_IN_DB(db, 'deployment_targets.id', '%(name)s'),
+          label='Deployment Target',
+          comment='Target infrastructure for deployment'),
     Field('instance_name', 'string', requires=IS_NOT_EMPTY(),
           label='Instance Name',
           comment='Name of the deployed instance'),
@@ -200,9 +234,15 @@ db.define_table(
     Field('status', 'string', requires=IS_IN_SET(DEPLOYMENT_STATUS), default='pending',
           label='Status',
           comment='Current deployment status'),
-    Field('deployment_type', 'string', requires=IS_IN_SET(['lxd', 'kvm']), default='lxd',
+    Field('deployment_type', 'string', requires=IS_IN_SET(['lxd', 'kvm', 'aws-ec2', 'gcp-vm']), default='lxd',
           label='Deployment Type',
           comment='Type of deployment performed'),
+    Field('compose_deployment', 'boolean', default=False,
+          label='Compose Deployment',
+          comment='Whether this is a multi-instance compose-style deployment'),
+    Field('compose_config', 'json',
+          label='Compose Configuration',
+          comment='Docker Compose-style configuration for multi-instance deployments'),
     Field('config_overrides', 'json',
           label='Config Overrides',
           comment='Custom configuration overrides for this deployment'),
@@ -310,15 +350,17 @@ db.executesql('CREATE INDEX IF NOT EXISTS idx_eggs_name ON eggs(name);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_eggs_category ON eggs(category);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_eggs_active ON eggs(is_active);')
 
-# LXD Clusters indexes
-db.executesql('CREATE INDEX IF NOT EXISTS idx_clusters_name ON lxd_clusters(name);')
-db.executesql('CREATE INDEX IF NOT EXISTS idx_clusters_status ON lxd_clusters(status);')
-db.executesql('CREATE INDEX IF NOT EXISTS idx_clusters_active ON lxd_clusters(is_active);')
+# Deployment Targets indexes
+db.executesql('CREATE INDEX IF NOT EXISTS idx_targets_name ON deployment_targets(name);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_targets_provider ON deployment_targets(provider_type);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_targets_status ON deployment_targets(status);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_targets_active ON deployment_targets(is_active);')
 
 # Deployments indexes
 db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_egg ON deployments(egg_id);')
-db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_cluster ON deployments(cluster_id);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_target ON deployments(target_id);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_type ON deployments(deployment_type);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_created ON deployments(created_on);')
 
 # Deployment logs indexes
