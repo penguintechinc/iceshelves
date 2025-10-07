@@ -1,0 +1,134 @@
+[[extend 'layout.html']]
+
+<section class="hero is-info is-medium">
+    <div class="hero-body">
+        <p class="title">
+            <i class="fas fa-egg"></i> Welcome to IceShelves
+        </p>
+        <p class="subtitle">
+            LXD/KVM Egg Deployment Platform
+        </p>
+    </div>
+</section>
+
+<div class="section">
+    <h2 class="title is-3">Dashboard</h2>
+
+    <!-- Statistics -->
+    <div class="columns">
+        <div class="column">
+            <div class="box has-text-centered">
+                <p class="heading">Total Eggs</p>
+                <p class="title is-2 has-text-info">[[=stats['total_eggs'] ]]</p>
+            </div>
+        </div>
+        <div class="column">
+            <div class="box has-text-centered">
+                <p class="heading">Clusters</p>
+                <p class="title is-2 has-text-primary">[[=stats['total_clusters'] ]]</p>
+            </div>
+        </div>
+        <div class="column">
+            <div class="box has-text-centered">
+                <p class="heading">Deployments</p>
+                <p class="title is-2 has-text-success">[[=stats['total_deployments'] ]]</p>
+            </div>
+        </div>
+        <div class="column">
+            <div class="box has-text-centered">
+                <p class="heading">Active</p>
+                <p class="title is-2 has-text-warning">[[=stats['active_deployments'] ]]</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="box">
+        <h3 class="title is-4">Quick Actions</h3>
+        <div class="buttons">
+            <a href="/iceshelves/deploy" class="button is-primary">
+                <i class="fas fa-rocket"></i>&nbsp; Deploy New Instance
+            </a>
+            <a href="/iceshelves/eggs" class="button is-info">
+                <i class="fas fa-egg"></i>&nbsp; Browse Eggs
+            </a>
+            <a href="/iceshelves/clusters/add" class="button is-success">
+                <i class="fas fa-plus"></i>&nbsp; Add Cluster
+            </a>
+        </div>
+    </div>
+
+    <!-- Recent Deployments -->
+    <div class="box">
+        <h3 class="title is-4">Recent Deployments</h3>
+        [[if recent_deployments:]]
+        <table class="table is-fullwidth is-striped is-hoverable">
+            <thead>
+                <tr>
+                    <th>Instance</th>
+                    <th>Egg</th>
+                    <th>Cluster</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                [[for deployment in recent_deployments:]]
+                <tr>
+                    <td>[[=deployment.instance_name]]</td>
+                    <td>[[=deployment.egg_id.name if deployment.egg_id else 'N/A']]</td>
+                    <td>[[=deployment.cluster_id.name if deployment.cluster_id else 'N/A']]</td>
+                    <td>
+                        [[if deployment.status == 'completed':]]
+                        <span class="status-badge status-completed">[[=deployment.status]]</span>
+                        [[elif deployment.status == 'failed':]]
+                        <span class="status-badge status-failed">[[=deployment.status]]</span>
+                        [[elif deployment.status in ['pending', 'in_progress']:]]
+                        <span class="status-badge status-pending">[[=deployment.status]]</span>
+                        [[else:]]
+                        <span class="status-badge">[[=deployment.status]]</span>
+                        [[pass]]
+                    </td>
+                    <td>[[=deployment.started_at.strftime('%Y-%m-%d %H:%M') if deployment.started_at else 'N/A']]</td>
+                    <td>
+                        <a href="/iceshelves/deployments/view/[[=deployment.id]]" class="button is-small is-info">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                    </td>
+                </tr>
+                [[pass]]
+            </tbody>
+        </table>
+        [[else:]]
+        <p class="has-text-grey">No deployments yet. <a href="/iceshelves/deploy">Deploy your first egg!</a></p>
+        [[pass]]
+    </div>
+
+    <!-- Active Clusters -->
+    <div class="box">
+        <h3 class="title is-4">Clusters</h3>
+        [[if active_clusters:]]
+        <div class="columns is-multiline">
+            [[for cluster in active_clusters:]]
+            <div class="column is-one-third">
+                <div class="card">
+                    <div class="card-content">
+                        <p class="title is-5">[[=cluster.name]]</p>
+                        <p class="subtitle is-6 has-text-grey">[[=cluster.connection_method]]</p>
+                        <span class="status-badge status-[[=cluster.status]]">[[=cluster.status]]</span>
+                    </div>
+                    <footer class="card-footer">
+                        <a href="/iceshelves/clusters/view/[[=cluster.id]]" class="card-footer-item">
+                            View
+                        </a>
+                    </footer>
+                </div>
+            </div>
+            [[pass]]
+        </div>
+        [[else:]]
+        <p class="has-text-grey">No clusters configured. <a href="/iceshelves/clusters/add">Add your first cluster!</a></p>
+        [[pass]]
+    </div>
+</div>

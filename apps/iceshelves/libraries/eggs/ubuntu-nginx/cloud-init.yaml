@@ -1,0 +1,65 @@
+#cloud-config
+hostname: nginx-server
+timezone: UTC
+locale: en_US.UTF-8
+
+users:
+  - name: ubuntu
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC...
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+  - vim
+  - curl
+  - htop
+
+write_files:
+  - path: /var/www/html/index.html
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>IceShelves - Nginx Server</title>
+          <style>
+              body { font-family: Arial, sans-serif; margin: 50px; background: #f0f0f0; }
+              .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+              h1 { color: #333; }
+              .info { background: #e8f5e9; padding: 15px; border-radius: 5px; margin-top: 20px; }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h1>Welcome to Nginx on IceShelves!</h1>
+              <p>This server was deployed using IceShelves egg deployment platform.</p>
+              <div class="info">
+                  <strong>Server Information:</strong><br>
+                  Hostname: <code>nginx-server</code><br>
+                  OS: Ubuntu 24.04 LTS<br>
+                  Web Server: Nginx<br>
+              </div>
+          </div>
+      </body>
+      </html>
+    permissions: '0644'
+
+runcmd:
+  - systemctl enable nginx
+  - systemctl start nginx
+  - ufw allow 'Nginx Full'
+  - echo "Nginx server configured successfully" > /etc/motd
+
+ssh_pwauth: false
+disable_root: true
+
+final_message: |
+  Nginx web server is ready!
+  Visit http://$(hostname -I | awk '{print $1}') to see the default page.

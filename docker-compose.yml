@@ -105,6 +105,39 @@ services:
     networks:
       - app-network
 
+  # IceShelves - LXD/KVM Egg Deployment Platform
+  iceshelves:
+    build:
+      context: .
+      dockerfile: apps/iceshelves/Dockerfile
+    container_name: project-template-iceshelves
+    environment:
+      - ICESHELVES_DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-project_template}?sslmode=disable
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-password}@redis:6379/2
+      - LICENSE_KEY=${LICENSE_KEY}
+      - PRODUCT_NAME=${PRODUCT_NAME:-iceshelves}
+      - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-https://license.penguintech.io}
+      - LOG_LEVEL=${ICESHELVES_LOG_LEVEL:-INFO}
+      - ENABLE_METRICS=true
+      - VERSION=${VERSION:-development}
+    ports:
+      - "${ICESHELVES_PORT:-8001}:8000"
+    volumes:
+      - iceshelves_eggs:/app/apps/iceshelves/libraries/eggs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/iceshelves/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app-network
+
   # Node.js Web Application
   web-node:
     build:
@@ -202,6 +235,8 @@ volumes:
   grafana_data:
     driver: local
   nginx_logs:
+    driver: local
+  iceshelves_eggs:
     driver: local
 
 networks:

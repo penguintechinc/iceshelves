@@ -1,0 +1,87 @@
+#cloud-config
+# Ubuntu with Docker - Production Ready
+# IceShelves Egg: ubuntu-docker
+
+hostname: docker-host
+
+timezone: UTC
+locale: en_US.UTF-8
+
+users:
+  - name: ubuntu
+    groups: sudo, docker
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... # Add your SSH key here
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - vim
+  - git
+  - htop
+  - net-tools
+
+# Install Docker
+runcmd:
+  # Add Docker's official GPG key
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+  # Set up Docker repository
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  # Install Docker Engine
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # Enable Docker service
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Add ubuntu user to docker group (already in groups above)
+  - usermod -aG docker ubuntu
+
+  # Install docker-compose standalone
+  - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+
+  # Verify installation
+  - docker --version
+  - docker compose version
+
+  # Update MOTD
+  - echo "Docker Host - Ready for Container Workloads" > /etc/motd
+  - echo "Docker version: $(docker --version)" >> /etc/motd
+
+# Configure Docker daemon
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2",
+        "live-restore": true
+      }
+    permissions: '0644'
+
+ssh_pwauth: false
+disable_root: true
+
+final_message: |
+  Docker host is ready!
+  Docker version: $(docker --version)
+  Docker Compose version: $(docker compose version)
+
+  This system was deployed using IceShelves.
+  Run 'docker ps' to see running containers.

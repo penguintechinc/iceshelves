@@ -1,0 +1,14 @@
+{
+  "name": "ubuntu-k8s-node",
+  "version": "1.0.0",
+  "description": "Kubernetes worker node ready to join cluster",
+  "category": "kubernetes",
+  "egg_type": "lxd-container",
+  "base_image": "ubuntu/24.04",
+  "tags": ["kubernetes", "k8s", "worker", "container"],
+  "requirements": {
+    "min_memory_mb": 2048,
+    "min_disk_gb": 20,
+    "min_cores": 2
+  }
+}

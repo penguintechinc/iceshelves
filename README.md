@@ -15,83 +15,141 @@
               |__/
 ```
 
-# 🏗️ Enterprise Project Template
+# 🐧 IceShelves - LXD/KVM Egg Deployment Platform
 
-**The Ultimate Multi-Language Development Foundation**
+```
+  ___          ____  _          _
+ |_ _|___ ___ / ___|| |__   ___| |_   _____  ___
+  | |/ __/ _ \ \___ \| '_ \ / _ \ \ \ / / _ \/ __|
+  | | (_|  __/  ___) | | | |  __/ |\ V /  __/\__ \
+ |___\___\___| |____/|_| |_|\___|_| \_/ \___||___/
 
-This comprehensive project template provides a production-ready foundation for enterprise software development, incorporating best practices from Penguin Tech Inc projects. Built with security, scalability, and developer experience at its core, it offers standardized tooling for Go, Python, and Node.js applications with integrated licensing, monitoring, and enterprise-grade infrastructure.
-## ✨ Why Choose This Template?
-
-### 🏭 Enterprise-Ready Architecture
-Built for production from day one with multi-language support (Go 1.23+, Python 3.12/3.13, Node.js 18+), comprehensive CI/CD pipelines, and enterprise-grade security scanning.
-
-### 🔒 Security First
-- **8-stage security validation** including Trivy, CodeQL, and Semgrep scanning
-- **TLS 1.2 minimum enforcement**, preferring TLS 1.3
-- **Automated vulnerability detection** with Dependabot and Socket.dev integration
-- **Secrets management** with environment-based configuration
-
-### 🚀 Performance Optimized
-- **Multi-architecture Docker builds** (amd64/arm64) with Debian-slim base images
-- **Parallel CI/CD workflows** for optimized build times
-- **eBPF/XDP networking** support for high-performance applications
-- **Connection pooling** and caching strategies built-in
-
-### 🏢 PenguinTech License Server Integration
-- **Centralized feature gating** with `https://license.penguintech.io`
-- **Universal JSON response format** across all products
-- **Multi-tier licensing** (community/professional/enterprise)
-- **Usage tracking and compliance** reporting
-
-### 🔄 Self-Healing & Monitoring
-- **Built-in health checks** and self-healing capabilities
-- **Prometheus metrics** and Grafana dashboard integration
-- **Structured logging** with configurable verbosity levels
-- **Real-time monitoring** and alerting
-
-### 🌐 Multi-Environment Support
-- **Air-gapped deployment** ready with local caching
-- **Container orchestration** with Kubernetes and Helm
-- **Environment-specific configurations** for dev/staging/production
-- **Blue-green deployment** support with automated rollbacks
-
-## 🛠️ Quick Start
-
-```bash
-# Clone and setup
-git clone <your-repository-url>
-cd your-project
-make setup                    # Install dependencies and setup environment
-make dev                      # Start development environment
+     LXD/KVM Deployment Made Simple
 ```
 
-## 📚 Key Components
+**Deploy cloud-init packages ("eggs") to LXD clusters and KVM hypervisors with ease**
 
-### Core Technologies
-- **Languages**: Go 1.23+, Python 3.12/3.13, Node.js 18+
-- **Databases**: PostgreSQL with PyDAL/GORM, Redis/Valkey caching
-- **Containers**: Docker with multi-stage builds, Kubernetes deployment
-- **Monitoring**: Prometheus, Grafana, structured logging
+IceShelves is a comprehensive py4web-based platform for managing and deploying standardized system configurations to LXD containers and KVM virtual machines. Built with security, flexibility, and automation at its core, it provides multiple connection methods and a modern web interface for infrastructure deployment.
+## ✨ Key Features
 
-### Security Features
-- Multi-factor authentication (MFA) and JWT tokens
-- Role-based access control (RBAC)
-- Automated security scanning and vulnerability management
-- Compliance audit logging (SOC2, ISO27001 ready)
+### 🥚 Egg Management
+- **Pre-built Eggs**: Ubuntu base, Docker, Nginx, Kubernetes nodes
+- **Custom Eggs**: Create your own deployment packages
+- **Template System**: Generate new eggs from templates
+- **Cloud-init Integration**: Full cloud-init YAML support
+- **Version Control**: Semantic versioning for eggs
 
-### Development Workflow
-- Comprehensive test coverage (unit, integration, e2e)
-- Automated code quality checks (linting, formatting, type checking)
-- Version management with semantic versioning
-- Feature branch workflow with required reviews
+### 🔌 Flexible Connection Methods
+- **Direct API**: Clientless connection to LXD API (immediate deployment)
+- **SSH Tunnel**: Clientless SSH-based connection (firewall-friendly)
+- **Polling Agent**: Client-based polling for air-gapped environments
+
+### 🏢 LXD Cluster Support
+- **Multi-host Clusters**: Deploy to LXD cluster members
+- **Single Hosts**: Support for standalone LXD hosts
+- **Target Selection**: Choose specific cluster nodes for deployment
+- **Health Monitoring**: Track cluster status and connectivity
+
+### 🖥️ KVM/Libvirt Support
+- **Virtual Machines**: Deploy KVM VMs for non-Linux workloads
+- **Blackbox Applications**: Run Windows or proprietary systems
+- **Full Isolation**: Complete kernel isolation when needed
+
+### 📊 Modern Web Interface
+- **Dashboard**: Real-time deployment statistics
+- **Egg Library**: Browse and search available eggs
+- **Deployment Wizard**: Step-by-step deployment interface
+- **Live Logs**: Real-time deployment progress monitoring
+
+### 🔐 Enterprise Ready
+- **PenguinTech License Integration**: Feature gating and licensing
+- **Multi-tenant Support**: Isolated deployments
+- **Audit Logging**: Complete deployment history
+- **Prometheus Metrics**: Built-in observability
+
+## 🚀 Quick Start
+
+### Using Docker Compose (Recommended)
+```bash
+# Clone repository
+git clone https://github.com/PenguinCloud/iceshelves.git
+cd iceshelves
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Start services
+docker-compose up -d iceshelves
+
+# Access IceShelves
+open http://localhost:8001/iceshelves
+```
+
+### Manual Installation
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure database
+export ICESHELVES_DATABASE_URL="postgresql://user:pass@localhost/iceshelves"
+
+# Run py4web
+py4web run apps --host 0.0.0.0 --port 8000
+
+# Access IceShelves
+open http://localhost:8000/iceshelves
+```
+
+## 📚 Core Components
+
+### Technology Stack
+- **Framework**: py4web (Python 3.12)
+- **Database**: PostgreSQL with PyDAL ORM
+- **Cache**: Redis/Valkey
+- **LXD Integration**: pylxd library
+- **KVM Integration**: libvirt-python
+- **Cloud-init**: PyYAML for configuration management
+
+### Connection Architectures
+
+#### 1. Direct API (Clientless)
+```
+IceShelves → LXD API (HTTPS) → LXD Host
+```
+- Immediate deployment
+- Requires network connectivity
+- Best for: Data centers, cloud environments
+
+#### 2. SSH Tunnel (Clientless)
+```
+IceShelves → SSH Tunnel → LXD Unix Socket
+```
+- Works through firewalls
+- SSH key authentication
+- Best for: Restricted networks
+
+#### 3. Polling Agent (Client-based)
+```
+IceShelves ← Agent (polls every 1-5 min) ← LXD Host
+```
+- Air-gapped support
+- Service account authentication
+- Best for: Isolated environments, DMZs
 
 ## 📖 Documentation
 
-- **Getting Started**: [docs/development/](docs/development/)
-- **API Reference**: [docs/api/](docs/api/)
-- **Deployment Guide**: [docs/deployment/](docs/deployment/)
-- **Architecture Overview**: [docs/architecture/](docs/architecture/)
-- **License Integration**: [docs/licensing/](docs/licensing/)
+- **IceShelves Guide**: [docs/iceshelves/README.md](docs/iceshelves/README.md)
+- **Egg Specification**: [docs/iceshelves/EGG_SPECIFICATION.md](docs/iceshelves/EGG_SPECIFICATION.md)
+- **API Reference**: [docs/iceshelves/API.md](docs/iceshelves/API.md)
+- **Agent Installation**: [docs/iceshelves/AGENT_INSTALLATION.md](docs/iceshelves/AGENT_INSTALLATION.md)
+- **Cloud-init Examples**: [docs/iceshelves/CLOUD_INIT_EXAMPLES.md](docs/iceshelves/CLOUD_INIT_EXAMPLES.md)
+
+### Pre-built Eggs
+- **ubuntu-base**: Minimal Ubuntu 24.04 LTS
+- **ubuntu-docker**: Docker Engine pre-installed
+- **ubuntu-nginx**: Nginx web server with Certbot
+- **ubuntu-k8s-node**: Kubernetes worker node ready to join cluster
 
 ## 🤝 Contributing
 

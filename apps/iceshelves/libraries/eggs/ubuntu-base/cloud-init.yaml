@@ -1,0 +1,51 @@
+#cloud-config
+# Ubuntu Base 24.04 LTS - Minimal Configuration
+# IceShelves Egg: ubuntu-base
+
+# Set hostname
+hostname: ubuntu-base
+
+# Set timezone
+timezone: UTC
+
+# Set locale
+locale: en_US.UTF-8
+
+# Configure default user
+users:
+  - name: ubuntu
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... # Add your SSH key here
+
+# Update packages on first boot
+package_update: true
+package_upgrade: true
+
+# Install essential packages
+packages:
+  - vim
+  - curl
+  - wget
+  - git
+  - htop
+  - net-tools
+  - build-essential
+  - ca-certificates
+
+# Configure SSH
+ssh_pwauth: false
+disable_root: true
+
+# Run commands on first boot
+runcmd:
+  - echo "Ubuntu base system initialized" > /etc/motd
+  - systemctl restart sshd
+
+# Final message
+final_message: |
+  Ubuntu 24.04 LTS base system is ready!
+  This system was deployed using IceShelves.
+  Uptime: $UPTIME

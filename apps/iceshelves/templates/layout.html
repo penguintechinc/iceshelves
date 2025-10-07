@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[[=title or 'IceShelves']]</title>
+    <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .navbar-brand .title {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .hero.is-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .box {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .footer {
+            margin-top: 3rem;
+            background-color: #f5f5f5;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        .status-active { background-color: #48c774; color: white; }
+        .status-pending { background-color: #ffdd57; color: #363636; }
+        .status-failed { background-color: #f14668; color: white; }
+        .status-completed { background-color: #00d1b2; color: white; }
+    </style>
+    [[block page_head]][[end]]
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar is-info" role="navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="/iceshelves">
+                <span class="title">
+                    <i class="fas fa-egg"></i> IceShelves
+                </span>
+            </a>
+            <a role="button" class="navbar-burger" id="navbarBurger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </a>
+        </div>
+
+        <div id="navbarMenu" class="navbar-menu">
+            <div class="navbar-start">
+                <a class="navbar-item" href="/iceshelves">
+                    <i class="fas fa-home"></i>&nbsp; Dashboard
+                </a>
+                <a class="navbar-item" href="/iceshelves/eggs">
+                    <i class="fas fa-egg"></i>&nbsp; Eggs
+                </a>
+                <a class="navbar-item" href="/iceshelves/clusters">
+                    <i class="fas fa-server"></i>&nbsp; Clusters
+                </a>
+                <a class="navbar-item" href="/iceshelves/deployments">
+                    <i class="fas fa-rocket"></i>&nbsp; Deployments
+                </a>
+                <a class="navbar-item" href="/iceshelves/deploy">
+                    <i class="fas fa-play-circle"></i>&nbsp; Deploy
+                </a>
+            </div>
+
+            <div class="navbar-end">
+                <div class="navbar-item">
+                    <div class="buttons">
+                        <a class="button is-light is-small" href="/iceshelves/healthz" target="_blank">
+                            <i class="fas fa-heartbeat"></i>&nbsp; Health
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    [[if flash:]]
+    <div class="container mt-4">
+        <div class="notification is-info">
+            <button class="delete"></button>
+            [[=flash]]
+        </div>
+    </div>
+    [[pass]]
+
+    <!-- Main Content -->
+    <section class="section">
+        <div class="container">
+            [[include]]
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>IceShelves</strong> by <a href="https://www.penguintech.io" target="_blank">Penguin Tech Inc</a>
+                <br>
+                LXD/KVM Egg Deployment Platform
+                <br>
+                <small>Version [[=VERSION or '1.0.0']]</small>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script>
+        // Navbar burger toggle
+        document.addEventListener('DOMContentLoaded', () => {
+            const $navbarBurger = document.getElementById('navbarBurger');
+            const $navbarMenu = document.getElementById('navbarMenu');
+
+            if ($navbarBurger) {
+                $navbarBurger.addEventListener('click', () => {
+                    $navbarBurger.classList.toggle('is-active');
+                    $navbarMenu.classList.toggle('is-active');
+                });
+            }
+
+            // Delete notification
+            document.querySelectorAll('.notification .delete').forEach(($delete) => {
+                const $notification = $delete.parentNode;
+                $delete.addEventListener('click', () => {
+                    $notification.parentNode.removeChild($notification);
+                });
+            });
+        });
+    </script>
+    [[block page_scripts]][[end]]
+</body>
+</html>

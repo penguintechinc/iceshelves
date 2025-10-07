@@ -7,13 +7,14 @@
 .DEFAULT_GOAL := help
 
 # Variables
-PROJECT_NAME := project-template
+PROJECT_NAME := iceshelves
 VERSION := $(shell cat .version 2>/dev/null || echo "development")
 DOCKER_REGISTRY := ghcr.io
 DOCKER_ORG := penguintechinc
 GO_VERSION := 1.23.5
 PYTHON_VERSION := 3.12
 NODE_VERSION := 18
+ICESHELVES_PORT := 8001
 
 # Colors for output
 RED := \033[31m
@@ -412,3 +413,80 @@ info: ## Info - Show project information
 env: ## Info - Show environment variables
 	@echo "$(BLUE)Environment Variables:$(RESET)"
 	@env | grep -E "^(LICENSE_|POSTGRES_|REDIS_|NODE_|GIN_|PY4WEB_)" | sort
+# ============================================================================
+# IceShelves Specific Commands
+# ============================================================================
+
+.PHONY: iceshelves-dev iceshelves-test iceshelves-build iceshelves-agent iceshelves-db-init
+
+iceshelves-dev: ## IceShelves - Start IceShelves in development mode
+	@echo "$(BLUE)Starting IceShelves development server...$(RESET)"
+	docker-compose up -d postgres redis
+	@sleep 3
+	cd apps && py4web run . --host 0.0.0.0 --port $(ICESHELVES_PORT)
+
+iceshelves-docker: ## IceShelves - Start IceShelves with Docker Compose
+	@echo "$(BLUE)Starting IceShelves with Docker Compose...$(RESET)"
+	docker-compose up -d iceshelves
+	@echo "$(GREEN)IceShelves is running at http://localhost:$(ICESHELVES_PORT)/iceshelves$(RESET)"
+
+iceshelves-test: ## IceShelves - Run IceShelves unit tests
+	@echo "$(BLUE)Running IceShelves unit tests...$(RESET)"
+	python -m pytest apps/iceshelves/tests/ -v --cov=apps/iceshelves --cov-report=term-missing
+
+iceshelves-build: ## IceShelves - Build IceShelves Docker image
+	@echo "$(BLUE)Building IceShelves Docker image...$(RESET)"
+	docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/iceshelves:$(VERSION) -f apps/iceshelves/Dockerfile .
+	docker tag $(DOCKER_REGISTRY)/$(DOCKER_ORG)/iceshelves:$(VERSION) $(DOCKER_REGISTRY)/$(DOCKER_ORG)/iceshelves:latest
+
+iceshelves-agent: ## IceShelves - Install agent on hypervisor (requires CLUSTER_ID and AGENT_KEY)
+	@echo "$(BLUE)Installing IceShelves agent...$(RESET)"
+	@if [ -z "$(CLUSTER_ID)" ] || [ -z "$(AGENT_KEY)" ]; then \
+		echo "$(RED)Error: CLUSTER_ID and AGENT_KEY required$(RESET)"; \
+		echo "$(YELLOW)Usage: make iceshelves-agent CLUSTER_ID=1 AGENT_KEY=your-key$(RESET)"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)Installing agent for cluster $(CLUSTER_ID)...$(RESET)"
+	sudo cp scripts/iceshelves-agent.py /usr/local/bin/iceshelves-agent
+	sudo chmod +x /usr/local/bin/iceshelves-agent
+	@echo "$(GREEN)Creating systemd service...$(RESET)"
+	@echo "[Unit]" | sudo tee /etc/systemd/system/iceshelves-agent.service
+	@echo "Description=IceShelves Deployment Agent" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "After=network.target" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "[Service]" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "Type=simple" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "User=root" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "Environment=ICESHELVES_SERVER=$(ICESHELVES_SERVER)" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "Environment=ICESHELVES_CLUSTER_ID=$(CLUSTER_ID)" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "Environment=ICESHELVES_AGENT_KEY=$(AGENT_KEY)" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "ExecStart=/usr/local/bin/iceshelves-agent" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "Restart=always" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "[Install]" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	@echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/iceshelves-agent.service
+	sudo systemctl daemon-reload
+	sudo systemctl enable iceshelves-agent
+	sudo systemctl start iceshelves-agent
+	@echo "$(GREEN)Agent installed and started!$(RESET)"
+	@echo "$(YELLOW)Check status: sudo systemctl status iceshelves-agent$(RESET)"
+
+iceshelves-db-init: ## IceShelves - Initialize database with sample data
+	@echo "$(BLUE)Initializing IceShelves database...$(RESET)"
+	@echo "$(YELLOW)This will create sample eggs and templates$(RESET)"
+	python scripts/init-iceshelves-db.py
+
+iceshelves-logs: ## IceShelves - View IceShelves logs
+	docker-compose logs -f iceshelves
+
+iceshelves-shell: ## IceShelves - Open shell in IceShelves container
+	docker-compose exec iceshelves /bin/bash
+
+iceshelves-stop: ## IceShelves - Stop IceShelves services
+	docker-compose stop iceshelves
+
+iceshelves-clean: ## IceShelves - Clean IceShelves data (WARNING: deletes all data)
+	@echo "$(RED)WARNING: This will delete all IceShelves data!$(RESET)"
+	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
+	docker-compose down -v iceshelves
+	@echo "$(GREEN)IceShelves data cleaned$(RESET)"

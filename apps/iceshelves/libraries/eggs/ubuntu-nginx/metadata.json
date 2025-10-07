@@ -1,0 +1,15 @@
+{
+  "name": "ubuntu-nginx",
+  "version": "1.0.0",
+  "description": "Ubuntu 24.04 LTS with Nginx web server",
+  "category": "webserver",
+  "egg_type": "lxd-container",
+  "base_image": "ubuntu/24.04",
+  "author": "IceShelves Team",
+  "tags": ["ubuntu", "nginx", "webserver", "ssl"],
+  "requirements": {
+    "min_memory_mb": 512,
+    "min_disk_gb": 5,
+    "min_cores": 1
+  }
+}
