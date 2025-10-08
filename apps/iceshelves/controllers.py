@@ -114,13 +114,27 @@ def index():
         limitby=(0, 10)
     )
 
-    # Active clusters
+    # Active clusters (all types)
     active_clusters = db(db.deployment_targets.is_active == True).select()
+
+    # Cloud providers (AWS, GCP)
+    cloud_providers = db(
+        (db.deployment_targets.is_active == True) &
+        (db.deployment_targets.provider_type.belongs(['aws', 'gcp']))
+    ).select()
+
+    # LXD clusters
+    lxd_clusters = db(
+        (db.deployment_targets.is_active == True) &
+        (db.deployment_targets.provider_type == 'lxd')
+    ).select()
 
     return dict(
         stats=stats,
         recent_deployments=recent_deployments,
         active_clusters=active_clusters,
+        cloud_providers=cloud_providers,
+        lxd_clusters=lxd_clusters,
     )
 
 
@@ -708,6 +722,779 @@ def templates_list():
     )
 
     return dict(templates=templates)
+
+
+# ============================================================================
+# CREDENTIALS MANAGEMENT
+# ============================================================================
+
+@action('credentials/manage', method=['GET', 'POST'])
+@action.uses('credentials/manage.html', session, db)
+def credentials_manage():
+    """Manage user credentials for cloud providers."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    # Get user's credentials
+    credentials = db(db.user_credentials.user_id == user_id).select(
+        orderby=db.user_credentials.created_on
+    )
+
+    return dict(credentials=credentials)
+
+
+@action('credentials/add/aws', method='POST')
+@CORS()
+def credentials_add_aws():
+    """Add AWS credentials."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    try:
+        data = request.json
+        name = data.get('name')
+        aws_access_key_id = data.get('aws_access_key_id')
+        aws_secret_access_key = data.get('aws_secret_access_key')
+        storage_type = data.get('storage_type', 'database')
+
+        # Validate required fields
+        if not all([name, aws_access_key_id, aws_secret_access_key]):
+            response.status = 400
+            return dict(success=False, message="Missing required fields")
+
+        # Save credential
+        credential_id = common.save_user_credential(
+            user_id=user_id,
+            name=name,
+            credential_type='aws',
+            storage_type=storage_type,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key
+        )
+
+        return dict(success=True, message="AWS credentials saved successfully", credential_id=credential_id)
+
+    except Exception as e:
+        logger.error(f"Failed to add AWS credentials: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('credentials/add/gcp', method='POST')
+@CORS()
+def credentials_add_gcp():
+    """Add GCP credentials."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    try:
+        data = request.json
+        name = data.get('name')
+        gcp_service_account_json = data.get('gcp_service_account_json')
+        gcp_project_id = data.get('gcp_project_id')
+        storage_type = data.get('storage_type', 'database')
+
+        # Validate required fields
+        if not all([name, gcp_service_account_json, gcp_project_id]):
+            response.status = 400
+            return dict(success=False, message="Missing required fields")
+
+        # Save credential
+        credential_id = common.save_user_credential(
+            user_id=user_id,
+            name=name,
+            credential_type='gcp',
+            storage_type=storage_type,
+            gcp_service_account_json=gcp_service_account_json,
+            gcp_project_id=gcp_project_id
+        )
+
+        return dict(success=True, message="GCP credentials saved successfully", credential_id=credential_id)
+
+    except Exception as e:
+        logger.error(f"Failed to add GCP credentials: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('credentials/add/ssh', method='POST')
+@CORS()
+def credentials_add_ssh():
+    """Add SSH credentials."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    try:
+        data = request.json
+        name = data.get('name')
+        ssh_private_key = data.get('ssh_private_key')
+        ssh_public_key = data.get('ssh_public_key')
+        storage_type = data.get('storage_type', 'database')
+
+        # Validate required fields
+        if not all([name, ssh_private_key]):
+            response.status = 400
+            return dict(success=False, message="Missing required fields")
+
+        # Save credential
+        credential_id = common.save_user_credential(
+            user_id=user_id,
+            name=name,
+            credential_type='ssh',
+            storage_type=storage_type,
+            ssh_private_key=ssh_private_key,
+            ssh_public_key=ssh_public_key or ''
+        )
+
+        return dict(success=True, message="SSH credentials saved successfully", credential_id=credential_id)
+
+    except Exception as e:
+        logger.error(f"Failed to add SSH credentials: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('credentials/delete/<credential_id:int>', method='POST')
+@CORS()
+def credentials_delete(credential_id):
+    """Delete credential."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    try:
+        credential = db.user_credentials[credential_id]
+
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        # Verify ownership
+        if credential.user_id != user_id:
+            response.status = 403
+            return dict(success=False, message="Unauthorized")
+
+        # Delete credential
+        del db.user_credentials[credential_id]
+        db.commit()
+
+        return dict(success=True, message="Credential deleted successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to delete credential: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('credentials/test/<credential_id:int>', method='POST')
+@CORS()
+def credentials_test(credential_id):
+    """Test credential connection."""
+    import asyncio
+
+    try:
+        credential = common.load_user_credential(credential_id)
+
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        # Test based on credential type
+        if credential['credential_type'] == 'aws':
+            creds = common.AWSCredentials(
+                access_key_id=credential['aws_access_key_id'],
+                secret_access_key=credential['aws_secret_access_key']
+            )
+            result = asyncio.run(common.validate_aws_credentials_async(creds))
+
+        elif credential['credential_type'] == 'gcp':
+            creds = common.GCPCredentials(
+                project_id=credential['gcp_project_id'],
+                service_account_json=credential['gcp_service_account_json']
+            )
+            result = asyncio.run(common.validate_gcp_credentials_async(creds))
+
+        else:
+            response.status = 400
+            return dict(success=False, message="Testing not supported for this credential type")
+
+        return dict(
+            success=result.valid,
+            message=result.message,
+            metadata=result.metadata
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to test credential: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+# ============================================================================
+# CLOUD PROVIDER CONFIGURATION
+# ============================================================================
+
+@action('clouds/add')
+@action.uses('clouds/select_provider.html', session, db)
+def clouds_select_provider():
+    """Select cloud provider to add."""
+    return dict()
+
+
+@action('clouds/add/aws', method=['GET', 'POST'])
+@action.uses('clouds/add_aws.html', session, db)
+def clouds_add_aws():
+    """Add AWS EC2 deployment target."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    if request.method == 'POST':
+        try:
+            data = request.json
+
+            # Basic information
+            name = data.get('name')
+            description = data.get('description', '')
+            region = data.get('region', 'us-east-1')
+
+            # Credentials
+            credential_id = data.get('credential_id')
+            credential_source = data.get('credential_source', 'saved')
+
+            # Configuration
+            instance_type = data.get('instance_type', 't3.micro')
+            ami = data.get('ami')
+            vpc_id = data.get('vpc_id')
+            subnet_id = data.get('subnet_id')
+            security_group_ids = data.get('security_group_ids', [])
+            ebs_volume_size = data.get('ebs_volume_size', 20)
+            ebs_volume_type = data.get('ebs_volume_type', 'gp3')
+
+            # Build cloud_config
+            cloud_config = {
+                'region': region,
+                'instance_type': instance_type,
+                'ami': ami,
+                'vpc_id': vpc_id,
+                'subnet_id': subnet_id,
+                'security_groups': security_group_ids,
+                'ebs_volume_size': ebs_volume_size,
+                'ebs_volume_type': ebs_volume_type,
+            }
+
+            # Add credential reference
+            if credential_source == 'saved' and credential_id:
+                cloud_config['credential_id'] = credential_id
+            elif credential_source == 'inline':
+                cloud_config['aws_access_key_id'] = data.get('aws_access_key_id')
+                cloud_config['aws_secret_access_key'] = data.get('aws_secret_access_key')
+            # else: IAM role (no credentials needed)
+
+            # Create deployment target
+            target_id = db.deployment_targets.insert(
+                name=name,
+                description=description,
+                provider_type='aws',
+                connection_method='direct-api',  # AWS uses SDK, not direct API
+                cloud_config=cloud_config,
+                is_active=True,
+                created_by=user_id,
+            )
+            db.commit()
+
+            return dict(success=True, message="AWS deployment target added successfully", target_id=target_id)
+
+        except Exception as e:
+            logger.error(f"Failed to add AWS deployment target: {e}")
+            response.status = 500
+            return dict(success=False, message=str(e))
+
+    # GET request - show wizard
+    return dict()
+
+
+@action('clouds/add/gcp', method=['GET', 'POST'])
+@action.uses('clouds/add_gcp.html', session, db)
+def clouds_add_gcp():
+    """Add GCP Compute Engine deployment target."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+
+    if request.method == 'POST':
+        try:
+            data = request.json
+
+            # Basic information
+            name = data.get('name')
+            description = data.get('description', '')
+            zone = data.get('zone', 'us-central1-a')
+
+            # Credentials
+            credential_id = data.get('credential_id')
+            credential_source = data.get('credential_source', 'saved')
+
+            # Configuration
+            machine_type = data.get('machine_type', 'e2-micro')
+            image_project = data.get('image_project', 'ubuntu-os-cloud')
+            image_family = data.get('image_family', 'ubuntu-2404-lts')
+            network = data.get('network', 'default')
+            firewall_tags = data.get('firewall_tags', [])
+            disk_size_gb = data.get('disk_size_gb', 20)
+            disk_type = data.get('disk_type', 'pd-standard')
+
+            # Build cloud_config
+            cloud_config = {
+                'zone': zone,
+                'machine_type': machine_type,
+                'image_project': image_project,
+                'image_family': image_family,
+                'network': network,
+                'firewall_tags': firewall_tags,
+                'disk_size_gb': disk_size_gb,
+                'disk_type': disk_type,
+            }
+
+            # Add credential reference
+            if credential_source == 'saved' and credential_id:
+                cloud_config['credential_id'] = credential_id
+            elif credential_source == 'upload':
+                cloud_config['gcp_service_account_json'] = data.get('gcp_service_account_json')
+                cloud_config['gcp_project_id'] = data.get('gcp_project_id')
+
+            # Create deployment target
+            target_id = db.deployment_targets.insert(
+                name=name,
+                description=description,
+                provider_type='gcp',
+                connection_method='direct-api',  # GCP uses SDK
+                cloud_config=cloud_config,
+                is_active=True,
+                created_by=user_id,
+            )
+            db.commit()
+
+            return dict(success=True, message="GCP deployment target added successfully", target_id=target_id)
+
+        except Exception as e:
+            logger.error(f"Failed to add GCP deployment target: {e}")
+            response.status = 500
+            return dict(success=False, message=str(e))
+
+    # GET request - show wizard
+    return dict()
+
+
+# ============================================================================
+# CLOUD API ENDPOINTS (for wizard dropdowns and validation)
+# ============================================================================
+
+@action('api/user/credentials', method='GET')
+@CORS()
+def api_user_credentials():
+    """Get user's credentials for dropdown population."""
+    user_id = session.get('user', 'default_user')  # TODO: Get from auth system
+    credential_type = request.query.get('type')  # aws, gcp, ssh
+
+    query = (db.user_credentials.user_id == user_id)
+
+    if credential_type:
+        query &= (db.user_credentials.credential_type == credential_type)
+
+    credentials = db(query).select(
+        db.user_credentials.id,
+        db.user_credentials.name,
+        db.user_credentials.credential_type,
+        db.user_credentials.created_on,
+        orderby=db.user_credentials.name
+    )
+
+    return dict(credentials=[
+        {
+            'id': c.id,
+            'name': c.name,
+            'type': c.credential_type,
+            'created_on': c.created_on.isoformat() if c.created_on else None
+        }
+        for c in credentials
+    ])
+
+
+@action('api/aws/test-connection', method='POST')
+@CORS()
+def api_aws_test_connection():
+    """Test AWS credentials and return validation result."""
+    import asyncio
+
+    try:
+        data = request.json
+        access_key_id = data.get('aws_access_key_id')
+        secret_access_key = data.get('aws_secret_access_key')
+        region = data.get('region', 'us-east-1')
+
+        if not access_key_id or not secret_access_key:
+            response.status = 400
+            return dict(success=False, message="Missing credentials")
+
+        creds = common.AWSCredentials(
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            region=region
+        )
+
+        result = asyncio.run(common.validate_aws_credentials_async(creds))
+
+        return dict(
+            success=result.valid,
+            message=result.message,
+            metadata=result.metadata
+        )
+
+    except Exception as e:
+        logger.error(f"AWS connection test failed: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/aws/vpcs', method='POST')
+@CORS()
+def api_aws_vpcs():
+    """Fetch AWS VPCs."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.AWSCredentials(
+            access_key_id=credential['aws_access_key_id'],
+            secret_access_key=credential['aws_secret_access_key'],
+            region=data.get('region', 'us-east-1')
+        )
+
+        vpcs = asyncio.run(common.fetch_aws_vpcs_async(creds))
+
+        return dict(success=True, vpcs=[
+            {
+                'vpc_id': vpc.vpc_id,
+                'cidr_block': vpc.cidr_block,
+                'is_default': vpc.is_default,
+                'state': vpc.state,
+                'tags': vpc.tags
+            }
+            for vpc in vpcs
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS VPCs: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/aws/subnets', method='POST')
+@CORS()
+def api_aws_subnets():
+    """Fetch AWS subnets for a VPC."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+        vpc_id = data.get('vpc_id')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.AWSCredentials(
+            access_key_id=credential['aws_access_key_id'],
+            secret_access_key=credential['aws_secret_access_key'],
+            region=data.get('region', 'us-east-1')
+        )
+
+        subnets = asyncio.run(common.fetch_aws_subnets_async(creds, vpc_id))
+
+        return dict(success=True, subnets=[
+            {
+                'subnet_id': subnet.subnet_id,
+                'vpc_id': subnet.vpc_id,
+                'cidr_block': subnet.cidr_block,
+                'availability_zone': subnet.availability_zone,
+                'available_ip_address_count': subnet.available_ip_address_count,
+                'tags': subnet.tags
+            }
+            for subnet in subnets
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS subnets: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/aws/security-groups', method='POST')
+@CORS()
+def api_aws_security_groups():
+    """Fetch AWS security groups for a VPC."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+        vpc_id = data.get('vpc_id')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.AWSCredentials(
+            access_key_id=credential['aws_access_key_id'],
+            secret_access_key=credential['aws_secret_access_key'],
+            region=data.get('region', 'us-east-1')
+        )
+
+        security_groups = asyncio.run(common.fetch_aws_security_groups_async(creds, vpc_id))
+
+        return dict(success=True, security_groups=[
+            {
+                'group_id': sg.group_id,
+                'group_name': sg.group_name,
+                'description': sg.description,
+                'vpc_id': sg.vpc_id,
+                'tags': sg.tags
+            }
+            for sg in security_groups
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS security groups: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/aws/amis', method='POST')
+@CORS()
+def api_aws_amis():
+    """Fetch AWS AMIs."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.AWSCredentials(
+            access_key_id=credential['aws_access_key_id'],
+            secret_access_key=credential['aws_secret_access_key'],
+            region=data.get('region', 'us-east-1')
+        )
+
+        amis = asyncio.run(common.fetch_aws_amis_async(creds))
+
+        return dict(success=True, amis=[
+            {
+                'ami_id': ami.ami_id,
+                'name': ami.name,
+                'description': ami.description,
+                'architecture': ami.architecture,
+                'root_device_type': ami.root_device_type,
+                'virtualization_type': ami.virtualization_type,
+                'creation_date': ami.creation_date
+            }
+            for ami in amis[:20]  # Limit to 20 most recent
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS AMIs: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/gcp/test-connection', method='POST')
+@CORS()
+def api_gcp_test_connection():
+    """Test GCP credentials and return validation result."""
+    import asyncio
+
+    try:
+        data = request.json
+        service_account_json = data.get('gcp_service_account_json')
+        project_id = data.get('gcp_project_id')
+        zone = data.get('zone', 'us-central1-a')
+
+        if not service_account_json or not project_id:
+            response.status = 400
+            return dict(success=False, message="Missing credentials")
+
+        creds = common.GCPCredentials(
+            project_id=project_id,
+            service_account_json=service_account_json,
+            zone=zone
+        )
+
+        result = asyncio.run(common.validate_gcp_credentials_async(creds))
+
+        return dict(
+            success=result.valid,
+            message=result.message,
+            metadata=result.metadata
+        )
+
+    except Exception as e:
+        logger.error(f"GCP connection test failed: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/gcp/networks', method='POST')
+@CORS()
+def api_gcp_networks():
+    """Fetch GCP networks."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.GCPCredentials(
+            project_id=credential['gcp_project_id'],
+            service_account_json=credential['gcp_service_account_json'],
+            zone=data.get('zone', 'us-central1-a')
+        )
+
+        networks = asyncio.run(common.fetch_gcp_networks_async(creds))
+
+        return dict(success=True, networks=[
+            {
+                'name': net.name,
+                'self_link': net.self_link,
+                'auto_create_subnetworks': net.auto_create_subnetworks,
+                'routing_mode': net.routing_mode
+            }
+            for net in networks
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP networks: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/gcp/machine-types', method='POST')
+@CORS()
+def api_gcp_machine_types():
+    """Fetch GCP machine types."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+        zone = data.get('zone', 'us-central1-a')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.GCPCredentials(
+            project_id=credential['gcp_project_id'],
+            service_account_json=credential['gcp_service_account_json'],
+            zone=zone
+        )
+
+        machine_types = asyncio.run(common.fetch_gcp_machine_types_async(creds))
+
+        return dict(success=True, machine_types=[
+            {
+                'name': mt.name,
+                'guest_cpus': mt.guest_cpus,
+                'memory_mb': mt.memory_mb,
+                'zone': mt.zone,
+                'description': mt.description
+            }
+            for mt in machine_types
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP machine types: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
+
+
+@action('api/gcp/images', method='POST')
+@CORS()
+def api_gcp_images():
+    """Fetch GCP images."""
+    import asyncio
+
+    try:
+        data = request.json
+        credential_id = data.get('credential_id')
+        family = data.get('family', 'ubuntu-2404-lts')
+
+        if not credential_id:
+            response.status = 400
+            return dict(success=False, message="Missing credential_id")
+
+        credential = common.load_user_credential(credential_id)
+        if not credential:
+            response.status = 404
+            return dict(success=False, message="Credential not found")
+
+        creds = common.GCPCredentials(
+            project_id=credential['gcp_project_id'],
+            service_account_json=credential['gcp_service_account_json'],
+            zone=data.get('zone', 'us-central1-a')
+        )
+
+        images = asyncio.run(common.fetch_gcp_images_async(creds, family))
+
+        return dict(success=True, images=[
+            {
+                'name': img.name,
+                'self_link': img.self_link,
+                'family': img.family,
+                'description': img.description,
+                'creation_timestamp': img.creation_timestamp
+            }
+            for img in images[:20]  # Limit to 20 most recent
+        ])
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP images: {e}")
+        response.status = 500
+        return dict(success=False, message=str(e))
 
 
 # ============================================================================

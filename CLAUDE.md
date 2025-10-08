@@ -13,6 +13,18 @@ This is a comprehensive project template incorporating best practices and patter
 - Version management system
 - PenguinTech License Server integration
 
+## IceShelves-Specific Terminology
+
+**Project Aliases:**
+- **"manager"** = The main IceShelves py4web application (apps/iceshelves/)
+  - This is the primary web application for managing and deploying eggs
+  - Handles LXD, KVM, AWS EC2, and GCP Compute Engine deployments
+  - Accessible via web UI and REST API
+  - Container name: `project-template-iceshelves` in docker-compose
+- **"agent"** = The polling agent script (scripts/iceshelves-agent.py)
+  - Client-based polling agent for air-gapped environments
+  - Runs on LXD/KVM hosts to poll for pending deployments
+
 ## Technology Stack
 
 ### Languages & Frameworks

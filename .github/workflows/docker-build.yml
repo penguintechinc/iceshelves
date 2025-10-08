@@ -12,6 +12,7 @@ env:
   IMAGE_NAME_API: ${{ github.repository }}/api
   IMAGE_NAME_WEB: ${{ github.repository }}/web
   IMAGE_NAME_PYTHON: ${{ github.repository }}/python-app
+  IMAGE_NAME_ICESHELVES: ${{ github.repository }}/iceshelves
 
 jobs:
   # Build matrix for different services
@@ -32,6 +33,10 @@ jobs:
             dockerfile: apps/web/Dockerfile
             context: .
             platforms: linux/amd64,linux/arm64
+          - name: iceshelves
+            dockerfile: apps/iceshelves/Dockerfile
+            context: .
+            platforms: linux/amd64,linux/arm64
 
     steps:
     - name: Checkout code
@@ -48,19 +53,32 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata (tags, labels)
+    - name: Determine tags
+      id: tags
+      run: |
+        TAGS=""
+        IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service.name }}"
+
+        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          # Release tag: add version tag and latest
+          VERSION=${GITHUB_REF#refs/tags/}
+          TAGS="${IMAGE_BASE}:${VERSION},${IMAGE_BASE}:latest"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          # Main branch: add beta tag
+          TAGS="${IMAGE_BASE}:beta"
+        else
+          # Other branches: add prototype tag
+          TAGS="${IMAGE_BASE}:prototype"
+        fi
+
+        echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+        echo "Building with tags: ${TAGS}"
+
+    - name: Extract metadata (labels)
       id: meta
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service.name }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,prefix={{branch}}-,suffix=-{{date 'YYYYMMDD'}},format=short
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -69,14 +87,14 @@ jobs:
         file: ${{ matrix.service.dockerfile }}
         platforms: ${{ matrix.service.platforms }}
         push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
+        tags: ${{ steps.tags.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
           BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           VCS_REF=${{ github.sha }}
-          VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          VERSION=${{ github.ref_name }}
 
   # Security scanning of built images
   security-scan:
@@ -85,13 +103,25 @@ jobs:
     if: github.event_name != 'pull_request'
     strategy:
       matrix:
-        service: [api, web, python-app]
+        service: [api, web, python-app, iceshelves]
 
     steps:
+    - name: Determine scan tag
+      id: scan_tag
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          TAG="latest"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          TAG="beta"
+        else
+          TAG="prototype"
+        fi
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.ref_name }}
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ steps.scan_tag.outputs.tag }}
         format: 'sarif'
         output: 'trivy-results-${{ matrix.service }}.sarif'
 
@@ -337,6 +367,7 @@ jobs:
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/api:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/web:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/python-app:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
+        echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/iceshelves:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "" >> CHANGELOG.md
         echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...${{ github.ref_name }}" >> CHANGELOG.md
 
@@ -362,7 +393,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const services = ['api', 'web', 'python-app'];
+          const services = ['api', 'web', 'python-app', 'iceshelves'];
 
           for (const service of services) {
             try {

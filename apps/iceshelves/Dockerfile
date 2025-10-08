@@ -10,6 +10,8 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    pkg-config \
+    libvirt-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -28,6 +30,7 @@ LABEL version="1.0.0"
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libvirt0 \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

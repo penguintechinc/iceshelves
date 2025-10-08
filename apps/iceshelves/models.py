@@ -342,6 +342,97 @@ db.define_table(
 )
 
 # ============================================================================
+# USER CREDENTIALS - Cloud Provider Credentials Management
+# ============================================================================
+db.define_table(
+    'user_credentials',
+    Field('user_id', 'string', requires=IS_NOT_EMPTY(),
+          label='User ID',
+          comment='User who owns these credentials (from auth system)'),
+    Field('name', 'string', requires=IS_NOT_EMPTY(),
+          label='Credential Name',
+          comment='Friendly name for this credential set (e.g., "AWS Production Account")'),
+    Field('credential_type', 'string', requires=IS_IN_SET(['aws', 'gcp', 'ssh', 'api_token']),
+          label='Credential Type',
+          comment='Type of credential: aws, gcp, ssh, or api_token'),
+    Field('description', 'text',
+          label='Description',
+          comment='Optional description of where/how these credentials are used'),
+    # AWS Credentials
+    Field('aws_access_key_id', 'string',
+          label='AWS Access Key ID',
+          comment='AWS access key ID (AKIA...)'),
+    Field('aws_secret_access_key', 'password',
+          label='AWS Secret Access Key',
+          comment='AWS secret access key (encrypted)'),
+    Field('aws_session_token', 'password',
+          label='AWS Session Token',
+          comment='Temporary AWS session token (optional, encrypted)'),
+    # GCP Credentials
+    Field('gcp_service_account_json', 'text',
+          label='GCP Service Account JSON',
+          comment='GCP service account JSON file content (encrypted)'),
+    Field('gcp_project_id', 'string',
+          label='GCP Project ID',
+          comment='GCP project ID extracted from service account'),
+    # SSH Credentials
+    Field('ssh_private_key', 'text',
+          label='SSH Private Key',
+          comment='SSH private key (PEM format, encrypted)'),
+    Field('ssh_public_key', 'text',
+          label='SSH Public Key',
+          comment='SSH public key'),
+    Field('ssh_passphrase', 'password',
+          label='SSH Key Passphrase',
+          comment='Passphrase for encrypted SSH key (encrypted)'),
+    # API Token Credentials (for generic APIs)
+    Field('api_token', 'password',
+          label='API Token',
+          comment='Generic API token/bearer token (encrypted)'),
+    Field('api_endpoint', 'string',
+          label='API Endpoint',
+          comment='API endpoint URL for token-based auth'),
+    # Storage and Encryption
+    Field('storage_type', 'string', requires=IS_IN_SET(['database', 'aws', 'gcp', 'infisical']),
+          default='database',
+          label='Storage Type',
+          comment='Where the actual credential data is stored'),
+    Field('storage_reference', 'string',
+          label='Storage Reference',
+          comment='Reference ID if stored in external secrets manager'),
+    Field('is_encrypted', 'boolean', default=True,
+          label='Is Encrypted',
+          comment='Whether credential data is encrypted'),
+    Field('encryption_key_id', 'string',
+          label='Encryption Key ID',
+          comment='ID of encryption key used (for key rotation)'),
+    # Metadata
+    Field('last_used', 'datetime',
+          label='Last Used',
+          comment='When these credentials were last used'),
+    Field('last_validated', 'datetime',
+          label='Last Validated',
+          comment='When credentials were last validated'),
+    Field('is_valid', 'boolean', default=True,
+          label='Is Valid',
+          comment='Whether credentials are currently valid'),
+    Field('validation_error', 'text',
+          label='Validation Error',
+          comment='Last validation error message if any'),
+    Field('is_active', 'boolean', default=True,
+          label='Active',
+          comment='Whether this credential is active'),
+    Field('tags', 'list:string',
+          label='Tags',
+          comment='Tags for organizing credentials'),
+    Field('created_on', 'datetime', default=lambda: __import__('datetime').datetime.utcnow(),
+          writable=False, readable=True),
+    Field('updated_on', 'datetime', update=lambda: __import__('datetime').datetime.utcnow(),
+          writable=False, readable=True),
+    format='%(name)s (%(credential_type)s)'
+)
+
+# ============================================================================
 # INDEXES for Performance
 # ============================================================================
 
@@ -367,6 +458,12 @@ db.executesql('CREATE INDEX IF NOT EXISTS idx_deployments_created ON deployments
 db.executesql('CREATE INDEX IF NOT EXISTS idx_logs_deployment ON deployment_logs(deployment_id);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_logs_level ON deployment_logs(log_level);')
 db.executesql('CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON deployment_logs(timestamp);')
+
+# User credentials indexes
+db.executesql('CREATE INDEX IF NOT EXISTS idx_credentials_user ON user_credentials(user_id);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_credentials_type ON user_credentials(credential_type);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_credentials_active ON user_credentials(is_active);')
+db.executesql('CREATE INDEX IF NOT EXISTS idx_credentials_storage ON user_credentials(storage_type);')
 
 # Commit any pending migrations
 db.commit()

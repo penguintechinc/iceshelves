@@ -1,6 +1,6 @@
 # Core Framework
-py4web==1.20241127.1
-pydal==20241031.1
+py4web==1.20250926.1
+pydal==20250922.1
 
 # Database Drivers
 psycopg2-binary==2.9.10
@@ -16,7 +16,7 @@ bcrypt==4.2.1
 cryptography==44.0.1
 
 # HTTP & API
-requests==2.32.4
+requests==2.31.0
 httpx==0.28.1
 aiohttp==3.12.14
 
@@ -28,7 +28,7 @@ click==8.1.8
 prometheus-client==0.21.1
 
 # Logging
-structlog==24.5.0
+structlog==25.4.0
 
 # Validation
 jsonschema==4.23.0
@@ -52,12 +52,12 @@ mypy==1.14.0
 
 # IceShelves - LXD/KVM Management
 pylxd==2.3.4
-libvirt-python==10.10.0
+# libvirt-python==10.8.0  # Optional: Only needed for KVM support - install manually if required
 PyYAML==6.0.2
 Jinja2==3.1.5
 
 # Cloud Providers & Secrets Management
 boto3==1.35.98                          # AWS SDK (EC2, Secrets Manager)
-google-cloud-secret-manager==2.21.2     # GCP Secrets Manager
+google-cloud-secret-manager==2.24.0     # GCP Secrets Manager
 google-cloud-compute==1.21.0            # GCP Compute Engine
 infisical-python==2.1.8                 # Infisical Secrets Management

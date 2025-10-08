@@ -1125,6 +1125,954 @@ def update_deployment_status(
 
 
 # ============================================================================
+# ASYNC CLOUD HELPERS WITH DATACLASSES (Python 3.12+)
+# ============================================================================
+
+import asyncio
+from dataclasses import dataclass, field
+from typing import ClassVar
+from concurrent.futures import ThreadPoolExecutor
+
+# Thread pool for async operations
+_executor = ThreadPoolExecutor(max_workers=10)
+
+
+@dataclass
+class AWSCredentials:
+    """AWS credential data structure."""
+    access_key_id: str
+    secret_access_key: str
+    region: str = 'us-east-1'
+    session_token: Optional[str] = None
+
+
+@dataclass
+class GCPCredentials:
+    """GCP credential data structure."""
+    project_id: str
+    service_account_json: str
+    zone: str = 'us-central1-a'
+
+
+@dataclass
+class AWSRegion:
+    """AWS region information."""
+    name: str
+    endpoint: str
+    opt_in_status: str
+
+
+@dataclass
+class AWSVPC:
+    """AWS VPC information."""
+    vpc_id: str
+    cidr_block: str
+    is_default: bool
+    state: str
+    tags: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class AWSSubnet:
+    """AWS subnet information."""
+    subnet_id: str
+    vpc_id: str
+    cidr_block: str
+    availability_zone: str
+    available_ip_address_count: int
+    tags: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class AWSSecurityGroup:
+    """AWS security group information."""
+    group_id: str
+    group_name: str
+    description: str
+    vpc_id: str
+    tags: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class AWSAMI:
+    """AWS AMI information."""
+    ami_id: str
+    name: str
+    description: str
+    architecture: str
+    root_device_type: str
+    virtualization_type: str
+    creation_date: str
+
+
+@dataclass
+class GCPNetwork:
+    """GCP network information."""
+    name: str
+    self_link: str
+    auto_create_subnetworks: bool
+    routing_mode: str
+
+
+@dataclass
+class GCPMachineType:
+    """GCP machine type information."""
+    name: str
+    guest_cpus: int
+    memory_mb: int
+    zone: str
+    description: str
+
+
+@dataclass
+class GCPImage:
+    """GCP image information."""
+    name: str
+    self_link: str
+    family: str
+    description: str
+    creation_timestamp: str
+
+
+@dataclass
+class CredentialValidationResult:
+    """Result of credential validation."""
+    valid: bool
+    message: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+async def validate_aws_credentials_async(credentials: AWSCredentials) -> CredentialValidationResult:
+    """
+    Validate AWS credentials asynchronously.
+
+    Args:
+        credentials: AWS credentials dataclass
+
+    Returns:
+        CredentialValidationResult with validation status
+    """
+    try:
+        import boto3
+        from botocore.exceptions import ClientError, NoCredentialsError
+
+        def _validate():
+            client = boto3.client(
+                'ec2',
+                region_name=credentials.region,
+                aws_access_key_id=credentials.access_key_id,
+                aws_secret_access_key=credentials.secret_access_key
+            )
+            # Test credentials by describing regions
+            response = client.describe_regions()
+            return response
+
+        # Run in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(_executor, _validate)
+
+        return CredentialValidationResult(
+            valid=True,
+            message=f"AWS credentials valid for region {credentials.region}",
+            metadata={'regions_count': len(response.get('Regions', []))}
+        )
+
+    except (ClientError, NoCredentialsError) as e:
+        return CredentialValidationResult(
+            valid=False,
+            message=f"AWS credential validation failed: {str(e)}",
+            metadata={'error_type': type(e).__name__}
+        )
+    except Exception as e:
+        return CredentialValidationResult(
+            valid=False,
+            message=f"Unexpected error: {str(e)}",
+            metadata={'error_type': type(e).__name__}
+        )
+
+
+async def validate_gcp_credentials_async(credentials: GCPCredentials) -> CredentialValidationResult:
+    """
+    Validate GCP credentials asynchronously.
+
+    Args:
+        credentials: GCP credentials dataclass
+
+    Returns:
+        CredentialValidationResult with validation status
+    """
+    try:
+        from google.cloud import compute_v1
+        from google.oauth2 import service_account
+        import json
+
+        def _validate():
+            # Parse service account JSON
+            service_account_info = json.loads(credentials.service_account_json)
+            creds = service_account.Credentials.from_service_account_info(service_account_info)
+
+            # Create compute client
+            client = compute_v1.InstancesClient(credentials=creds)
+
+            # Test credentials by listing instances
+            request = compute_v1.ListInstancesRequest(
+                project=credentials.project_id,
+                zone=credentials.zone
+            )
+            _ = client.list(request=request)
+
+            return service_account_info.get('project_id')
+
+        # Run in thread pool
+        loop = asyncio.get_event_loop()
+        project_id = await loop.run_in_executor(_executor, _validate)
+
+        return CredentialValidationResult(
+            valid=True,
+            message=f"GCP credentials valid for project {credentials.project_id}",
+            metadata={'project_id': project_id, 'zone': credentials.zone}
+        )
+
+    except Exception as e:
+        return CredentialValidationResult(
+            valid=False,
+            message=f"GCP credential validation failed: {str(e)}",
+            metadata={'error_type': type(e).__name__}
+        )
+
+
+async def fetch_aws_vpcs_async(credentials: AWSCredentials) -> List[AWSVPC]:
+    """
+    Fetch AWS VPCs asynchronously.
+
+    Args:
+        credentials: AWS credentials dataclass
+
+    Returns:
+        List of AWSVPC dataclasses
+    """
+    try:
+        import boto3
+
+        def _fetch():
+            client = boto3.client(
+                'ec2',
+                region_name=credentials.region,
+                aws_access_key_id=credentials.access_key_id,
+                aws_secret_access_key=credentials.secret_access_key
+            )
+            response = client.describe_vpcs()
+            return response['Vpcs']
+
+        loop = asyncio.get_event_loop()
+        vpcs_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            AWSVPC(
+                vpc_id=vpc['VpcId'],
+                cidr_block=vpc['CidrBlock'],
+                is_default=vpc.get('IsDefault', False),
+                state=vpc['State'],
+                tags={tag['Key']: tag['Value'] for tag in vpc.get('Tags', [])}
+            )
+            for vpc in vpcs_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS VPCs: {e}")
+        return []
+
+
+async def fetch_aws_subnets_async(credentials: AWSCredentials, vpc_id: Optional[str] = None) -> List[AWSSubnet]:
+    """
+    Fetch AWS subnets asynchronously.
+
+    Args:
+        credentials: AWS credentials dataclass
+        vpc_id: Optional VPC ID to filter subnets
+
+    Returns:
+        List of AWSSubnet dataclasses
+    """
+    try:
+        import boto3
+
+        def _fetch():
+            client = boto3.client(
+                'ec2',
+                region_name=credentials.region,
+                aws_access_key_id=credentials.access_key_id,
+                aws_secret_access_key=credentials.secret_access_key
+            )
+
+            filters = [{'Name': 'vpc-id', 'Values': [vpc_id]}] if vpc_id else []
+            response = client.describe_subnets(Filters=filters)
+            return response['Subnets']
+
+        loop = asyncio.get_event_loop()
+        subnets_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            AWSSubnet(
+                subnet_id=subnet['SubnetId'],
+                vpc_id=subnet['VpcId'],
+                cidr_block=subnet['CidrBlock'],
+                availability_zone=subnet['AvailabilityZone'],
+                available_ip_address_count=subnet['AvailableIpAddressCount'],
+                tags={tag['Key']: tag['Value'] for tag in subnet.get('Tags', [])}
+            )
+            for subnet in subnets_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS subnets: {e}")
+        return []
+
+
+async def fetch_aws_security_groups_async(credentials: AWSCredentials, vpc_id: Optional[str] = None) -> List[AWSSecurityGroup]:
+    """
+    Fetch AWS security groups asynchronously.
+
+    Args:
+        credentials: AWS credentials dataclass
+        vpc_id: Optional VPC ID to filter security groups
+
+    Returns:
+        List of AWSSecurityGroup dataclasses
+    """
+    try:
+        import boto3
+
+        def _fetch():
+            client = boto3.client(
+                'ec2',
+                region_name=credentials.region,
+                aws_access_key_id=credentials.access_key_id,
+                aws_secret_access_key=credentials.secret_access_key
+            )
+
+            filters = [{'Name': 'vpc-id', 'Values': [vpc_id]}] if vpc_id else []
+            response = client.describe_security_groups(Filters=filters)
+            return response['SecurityGroups']
+
+        loop = asyncio.get_event_loop()
+        sgs_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            AWSSecurityGroup(
+                group_id=sg['GroupId'],
+                group_name=sg['GroupName'],
+                description=sg['Description'],
+                vpc_id=sg['VpcId'],
+                tags={tag['Key']: tag['Value'] for tag in sg.get('Tags', [])}
+            )
+            for sg in sgs_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS security groups: {e}")
+        return []
+
+
+async def fetch_aws_amis_async(credentials: AWSCredentials, filters: Optional[List[Dict]] = None) -> List[AWSAMI]:
+    """
+    Fetch AWS AMIs asynchronously.
+
+    Args:
+        credentials: AWS credentials dataclass
+        filters: Optional filters for AMI search
+
+    Returns:
+        List of AWSAMI dataclasses
+    """
+    try:
+        import boto3
+
+        def _fetch():
+            client = boto3.client(
+                'ec2',
+                region_name=credentials.region,
+                aws_access_key_id=credentials.access_key_id,
+                aws_secret_access_key=credentials.secret_access_key
+            )
+
+            # Default to Ubuntu 24.04 LTS if no filters
+            if not filters:
+                filters = [
+                    {'Name': 'name', 'Values': ['ubuntu/images/hvm-ssd/ubuntu-*-24.04-*']},
+                    {'Name': 'state', 'Values': ['available']},
+                    {'Name': 'architecture', 'Values': ['x86_64']}
+                ]
+
+            response = client.describe_images(Filters=filters, Owners=['099720109477'])  # Canonical
+            return response['Images']
+
+        loop = asyncio.get_event_loop()
+        amis_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            AWSAMI(
+                ami_id=ami['ImageId'],
+                name=ami['Name'],
+                description=ami.get('Description', ''),
+                architecture=ami['Architecture'],
+                root_device_type=ami['RootDeviceType'],
+                virtualization_type=ami['VirtualizationType'],
+                creation_date=ami['CreationDate']
+            )
+            for ami in amis_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch AWS AMIs: {e}")
+        return []
+
+
+async def fetch_gcp_networks_async(credentials: GCPCredentials) -> List[GCPNetwork]:
+    """
+    Fetch GCP networks asynchronously.
+
+    Args:
+        credentials: GCP credentials dataclass
+
+    Returns:
+        List of GCPNetwork dataclasses
+    """
+    try:
+        from google.cloud import compute_v1
+        from google.oauth2 import service_account
+        import json
+
+        def _fetch():
+            service_account_info = json.loads(credentials.service_account_json)
+            creds = service_account.Credentials.from_service_account_info(service_account_info)
+
+            client = compute_v1.NetworksClient(credentials=creds)
+            request = compute_v1.ListNetworksRequest(project=credentials.project_id)
+            networks = client.list(request=request)
+
+            return list(networks)
+
+        loop = asyncio.get_event_loop()
+        networks_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            GCPNetwork(
+                name=network.name,
+                self_link=network.self_link,
+                auto_create_subnetworks=network.auto_create_subnetworks,
+                routing_mode=network.routing_config.routing_mode if hasattr(network, 'routing_config') else 'REGIONAL'
+            )
+            for network in networks_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP networks: {e}")
+        return []
+
+
+async def fetch_gcp_machine_types_async(credentials: GCPCredentials) -> List[GCPMachineType]:
+    """
+    Fetch GCP machine types asynchronously.
+
+    Args:
+        credentials: GCP credentials dataclass
+
+    Returns:
+        List of GCPMachineType dataclasses
+    """
+    try:
+        from google.cloud import compute_v1
+        from google.oauth2 import service_account
+        import json
+
+        def _fetch():
+            service_account_info = json.loads(credentials.service_account_json)
+            creds = service_account.Credentials.from_service_account_info(service_account_info)
+
+            client = compute_v1.MachineTypesClient(credentials=creds)
+            request = compute_v1.ListMachineTypesRequest(
+                project=credentials.project_id,
+                zone=credentials.zone
+            )
+            machine_types = client.list(request=request)
+
+            return list(machine_types)
+
+        loop = asyncio.get_event_loop()
+        machine_types_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            GCPMachineType(
+                name=mt.name,
+                guest_cpus=mt.guest_cpus,
+                memory_mb=mt.memory_mb,
+                zone=credentials.zone,
+                description=mt.description
+            )
+            for mt in machine_types_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP machine types: {e}")
+        return []
+
+
+async def fetch_gcp_images_async(credentials: GCPCredentials, family: str = 'ubuntu-2404-lts') -> List[GCPImage]:
+    """
+    Fetch GCP images asynchronously.
+
+    Args:
+        credentials: GCP credentials dataclass
+        family: Image family to fetch (default: ubuntu-2404-lts)
+
+    Returns:
+        List of GCPImage dataclasses
+    """
+    try:
+        from google.cloud import compute_v1
+        from google.oauth2 import service_account
+        import json
+
+        def _fetch():
+            service_account_info = json.loads(credentials.service_account_json)
+            creds = service_account.Credentials.from_service_account_info(service_account_info)
+
+            client = compute_v1.ImagesClient(credentials=creds)
+
+            # Fetch from ubuntu-os-cloud project
+            request = compute_v1.ListImagesRequest(project='ubuntu-os-cloud')
+            images = client.list(request=request)
+
+            # Filter by family
+            return [img for img in images if family in img.family]
+
+        loop = asyncio.get_event_loop()
+        images_data = await loop.run_in_executor(_executor, _fetch)
+
+        return [
+            GCPImage(
+                name=img.name,
+                self_link=img.self_link,
+                family=img.family,
+                description=img.description or '',
+                creation_timestamp=img.creation_timestamp
+            )
+            for img in images_data
+        ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch GCP images: {e}")
+        return []
+
+
+async def fetch_all_aws_resources_concurrent(credentials: AWSCredentials) -> Dict[str, Any]:
+    """
+    Fetch all AWS resources concurrently for performance.
+
+    Args:
+        credentials: AWS credentials dataclass
+
+    Returns:
+        Dictionary with all fetched resources
+    """
+    # Run all fetch operations concurrently
+    vpcs, amis = await asyncio.gather(
+        fetch_aws_vpcs_async(credentials),
+        fetch_aws_amis_async(credentials),
+        return_exceptions=True
+    )
+
+    result = {
+        'vpcs': vpcs if not isinstance(vpcs, Exception) else [],
+        'amis': amis if not isinstance(amis, Exception) else [],
+        'subnets': [],
+        'security_groups': []
+    }
+
+    # If we have VPCs, fetch subnets and security groups for each
+    if result['vpcs']:
+        subnet_tasks = [fetch_aws_subnets_async(credentials, vpc.vpc_id) for vpc in result['vpcs'][:5]]  # Limit to first 5 VPCs
+        sg_tasks = [fetch_aws_security_groups_async(credentials, vpc.vpc_id) for vpc in result['vpcs'][:5]]
+
+        subnets_results, sgs_results = await asyncio.gather(
+            asyncio.gather(*subnet_tasks, return_exceptions=True),
+            asyncio.gather(*sg_tasks, return_exceptions=True)
+        )
+
+        # Flatten results
+        for subnet_list in subnets_results:
+            if not isinstance(subnet_list, Exception):
+                result['subnets'].extend(subnet_list)
+
+        for sg_list in sgs_results:
+            if not isinstance(sg_list, Exception):
+                result['security_groups'].extend(sg_list)
+
+    return result
+
+
+async def fetch_all_gcp_resources_concurrent(credentials: GCPCredentials) -> Dict[str, Any]:
+    """
+    Fetch all GCP resources concurrently for performance.
+
+    Args:
+        credentials: GCP credentials dataclass
+
+    Returns:
+        Dictionary with all fetched resources
+    """
+    # Run all fetch operations concurrently
+    networks, machine_types, images = await asyncio.gather(
+        fetch_gcp_networks_async(credentials),
+        fetch_gcp_machine_types_async(credentials),
+        fetch_gcp_images_async(credentials),
+        return_exceptions=True
+    )
+
+    return {
+        'networks': networks if not isinstance(networks, Exception) else [],
+        'machine_types': machine_types if not isinstance(machine_types, Exception) else [],
+        'images': images if not isinstance(images, Exception) else []
+    }
+
+
+# ============================================================================
+# ENCRYPTION UTILITIES (AES-256)
+# ============================================================================
+
+from cryptography.fernet import Fernet
+from base64 import b64encode, b64decode
+
+
+class EncryptionManager:
+    """
+    Manages encryption/decryption of sensitive data using Fernet (AES-256).
+
+    Uses encryption key from environment variable ICESHELVES_ENCRYPTION_KEY.
+    If not set, generates a new key (WARNING: data will be unrecoverable on restart).
+    """
+
+    def __init__(self):
+        """Initialize encryption manager with key from environment or generate new."""
+        self.encryption_key = os.getenv('ICESHELVES_ENCRYPTION_KEY')
+
+        if not self.encryption_key:
+            # Generate new key if not in environment
+            self.encryption_key = Fernet.generate_key().decode('utf-8')
+            logger.warning(
+                "ICESHELVES_ENCRYPTION_KEY not set in environment. "
+                "Generated temporary key - data will be unrecoverable on restart! "
+                f"Set this key in your environment: ICESHELVES_ENCRYPTION_KEY={self.encryption_key}"
+            )
+
+        # Ensure key is bytes for Fernet
+        if isinstance(self.encryption_key, str):
+            self.encryption_key = self.encryption_key.encode('utf-8')
+
+        self.fernet = Fernet(self.encryption_key)
+
+    def encrypt(self, plaintext: str) -> str:
+        """
+        Encrypt plaintext string.
+
+        Args:
+            plaintext: String to encrypt
+
+        Returns:
+            Base64 encoded encrypted string
+        """
+        if not plaintext:
+            return ''
+
+        encrypted_bytes = self.fernet.encrypt(plaintext.encode('utf-8'))
+        return b64encode(encrypted_bytes).decode('utf-8')
+
+    def decrypt(self, encrypted: str) -> str:
+        """
+        Decrypt encrypted string.
+
+        Args:
+            encrypted: Base64 encoded encrypted string
+
+        Returns:
+            Decrypted plaintext string
+        """
+        if not encrypted:
+            return ''
+
+        try:
+            encrypted_bytes = b64decode(encrypted.encode('utf-8'))
+            decrypted_bytes = self.fernet.decrypt(encrypted_bytes)
+            return decrypted_bytes.decode('utf-8')
+        except Exception as e:
+            logger.error(f"Failed to decrypt data: {e}")
+            raise ValidationError("Decryption failed - invalid key or corrupted data")
+
+    def encrypt_dict(self, data: Dict[str, Any], fields_to_encrypt: List[str]) -> Dict[str, Any]:
+        """
+        Encrypt specific fields in a dictionary.
+
+        Args:
+            data: Dictionary with data to encrypt
+            fields_to_encrypt: List of field names to encrypt
+
+        Returns:
+            Dictionary with encrypted fields
+        """
+        encrypted_data = data.copy()
+
+        for field in fields_to_encrypt:
+            if field in encrypted_data and encrypted_data[field]:
+                encrypted_data[field] = self.encrypt(str(encrypted_data[field]))
+
+        return encrypted_data
+
+    def decrypt_dict(self, data: Dict[str, Any], fields_to_decrypt: List[str]) -> Dict[str, Any]:
+        """
+        Decrypt specific fields in a dictionary.
+
+        Args:
+            data: Dictionary with encrypted data
+            fields_to_decrypt: List of field names to decrypt
+
+        Returns:
+            Dictionary with decrypted fields
+        """
+        decrypted_data = data.copy()
+
+        for field in fields_to_decrypt:
+            if field in decrypted_data and decrypted_data[field]:
+                decrypted_data[field] = self.decrypt(str(decrypted_data[field]))
+
+        return decrypted_data
+
+
+# Global encryption manager instance
+_encryption_manager = None
+
+def get_encryption_manager() -> EncryptionManager:
+    """Get global encryption manager instance."""
+    global _encryption_manager
+    if _encryption_manager is None:
+        _encryption_manager = EncryptionManager()
+    return _encryption_manager
+
+
+def encrypt_aws_credentials(access_key_id: str, secret_access_key: str) -> Tuple[str, str]:
+    """
+    Encrypt AWS credentials for database storage.
+
+    Args:
+        access_key_id: AWS access key ID
+        secret_access_key: AWS secret access key
+
+    Returns:
+        Tuple of (encrypted_access_key, encrypted_secret_key)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.encrypt(access_key_id),
+        manager.encrypt(secret_access_key)
+    )
+
+
+def decrypt_aws_credentials(encrypted_access_key: str, encrypted_secret_key: str) -> Tuple[str, str]:
+    """
+    Decrypt AWS credentials from database storage.
+
+    Args:
+        encrypted_access_key: Encrypted AWS access key ID
+        encrypted_secret_key: Encrypted AWS secret access key
+
+    Returns:
+        Tuple of (access_key_id, secret_access_key)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.decrypt(encrypted_access_key),
+        manager.decrypt(encrypted_secret_key)
+    )
+
+
+def encrypt_gcp_credentials(service_account_json: str, project_id: str) -> Tuple[str, str]:
+    """
+    Encrypt GCP credentials for database storage.
+
+    Args:
+        service_account_json: GCP service account JSON string
+        project_id: GCP project ID
+
+    Returns:
+        Tuple of (encrypted_json, encrypted_project_id)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.encrypt(service_account_json),
+        manager.encrypt(project_id)
+    )
+
+
+def decrypt_gcp_credentials(encrypted_json: str, encrypted_project_id: str) -> Tuple[str, str]:
+    """
+    Decrypt GCP credentials from database storage.
+
+    Args:
+        encrypted_json: Encrypted service account JSON
+        encrypted_project_id: Encrypted project ID
+
+    Returns:
+        Tuple of (service_account_json, project_id)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.decrypt(encrypted_json),
+        manager.decrypt(encrypted_project_id)
+    )
+
+
+def encrypt_ssh_keys(private_key: str, public_key: str) -> Tuple[str, str]:
+    """
+    Encrypt SSH keys for database storage.
+
+    Args:
+        private_key: SSH private key
+        public_key: SSH public key
+
+    Returns:
+        Tuple of (encrypted_private_key, encrypted_public_key)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.encrypt(private_key),
+        manager.encrypt(public_key)
+    )
+
+
+def decrypt_ssh_keys(encrypted_private_key: str, encrypted_public_key: str) -> Tuple[str, str]:
+    """
+    Decrypt SSH keys from database storage.
+
+    Args:
+        encrypted_private_key: Encrypted SSH private key
+        encrypted_public_key: Encrypted SSH public key
+
+    Returns:
+        Tuple of (private_key, public_key)
+    """
+    manager = get_encryption_manager()
+    return (
+        manager.decrypt(encrypted_private_key),
+        manager.decrypt(encrypted_public_key)
+    )
+
+
+def load_user_credential(credential_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Load and decrypt user credential from database.
+
+    Args:
+        credential_id: Credential ID
+
+    Returns:
+        Dictionary with decrypted credential data or None
+    """
+    credential = db.user_credentials[credential_id]
+    if not credential:
+        return None
+
+    result = {
+        'id': credential.id,
+        'user_id': credential.user_id,
+        'name': credential.name,
+        'credential_type': credential.credential_type,
+        'storage_type': credential.storage_type,
+        'is_encrypted': credential.is_encrypted,
+    }
+
+    # Decrypt based on type if stored in database
+    if credential.storage_type == 'database' and credential.is_encrypted:
+        manager = get_encryption_manager()
+
+        if credential.credential_type == 'aws':
+            result['aws_access_key_id'] = manager.decrypt(credential.aws_access_key_id)
+            result['aws_secret_access_key'] = manager.decrypt(credential.aws_secret_access_key)
+
+        elif credential.credential_type == 'gcp':
+            result['gcp_service_account_json'] = manager.decrypt(credential.gcp_service_account_json)
+            result['gcp_project_id'] = manager.decrypt(credential.gcp_project_id)
+
+        elif credential.credential_type == 'ssh':
+            result['ssh_private_key'] = manager.decrypt(credential.ssh_private_key)
+            result['ssh_public_key'] = manager.decrypt(credential.ssh_public_key)
+    else:
+        # Not encrypted or stored externally
+        result['aws_access_key_id'] = credential.aws_access_key_id
+        result['aws_secret_access_key'] = credential.aws_secret_access_key
+        result['gcp_service_account_json'] = credential.gcp_service_account_json
+        result['gcp_project_id'] = credential.gcp_project_id
+        result['ssh_private_key'] = credential.ssh_private_key
+        result['ssh_public_key'] = credential.ssh_public_key
+
+    return result
+
+
+def save_user_credential(
+    user_id: str,
+    name: str,
+    credential_type: str,
+    storage_type: str = 'database',
+    **credential_data
+) -> int:
+    """
+    Save and encrypt user credential to database.
+
+    Args:
+        user_id: User ID who owns the credential
+        name: Friendly name for credential
+        credential_type: Type of credential (aws, gcp, ssh)
+        storage_type: Storage type (database, aws, gcp, infisical)
+        **credential_data: Credential-specific data
+
+    Returns:
+        Credential ID
+    """
+    manager = get_encryption_manager()
+
+    # Prepare data for insertion
+    insert_data = {
+        'user_id': user_id,
+        'name': name,
+        'credential_type': credential_type,
+        'storage_type': storage_type,
+        'is_encrypted': True if storage_type == 'database' else False,
+    }
+
+    # Encrypt credentials if storing in database
+    if storage_type == 'database':
+        if credential_type == 'aws':
+            insert_data['aws_access_key_id'] = manager.encrypt(credential_data['aws_access_key_id'])
+            insert_data['aws_secret_access_key'] = manager.encrypt(credential_data['aws_secret_access_key'])
+
+        elif credential_type == 'gcp':
+            insert_data['gcp_service_account_json'] = manager.encrypt(credential_data['gcp_service_account_json'])
+            insert_data['gcp_project_id'] = manager.encrypt(credential_data['gcp_project_id'])
+
+        elif credential_type == 'ssh':
+            insert_data['ssh_private_key'] = manager.encrypt(credential_data['ssh_private_key'])
+            insert_data['ssh_public_key'] = manager.encrypt(credential_data['ssh_public_key'])
+    else:
+        # Store reference to external secret manager
+        # TODO: Implement external secret manager integration
+        pass
+
+    credential_id = db.user_credentials.insert(**insert_data)
+    db.commit()
+
+    return credential_id
+
+
+# ============================================================================
 # HEALTH CHECK
 # ============================================================================
 

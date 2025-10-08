@@ -1,0 +1,203 @@
+[[extend 'layout.html']]
+
+<section class="hero is-primary">
+  <div class="hero-body">
+    <div class="container">
+      <h1 class="title">
+        <span class="icon"><i class="fas fa-cloud-upload-alt"></i></span>
+        Add Cloud Provider
+      </h1>
+      <p class="subtitle">Select a cloud provider to connect to IceShelves</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-10">
+
+        <!-- Cloud Provider Cards -->
+        <div class="columns is-multiline is-variable is-6">
+
+          <!-- AWS Card -->
+          <div class="column is-half">
+            <a href="[[=URL('clouds/add/aws')]]">
+              <div class="card provider-card has-text-centered">
+                <div class="card-content">
+                  <div class="content">
+                    <figure class="image is-128x128 mx-auto mb-4">
+                      <img src="[[=URL('static', 'img/logos/aws.svg')]]" alt="Amazon Web Services"
+                           onerror="this.src='[[=URL('static', 'img/logos/aws-fallback.png')]]'">
+                    </figure>
+                    <h2 class="title is-4">Amazon Web Services</h2>
+                    <p class="subtitle is-6 has-text-grey">EC2 Virtual Machines</p>
+                    <div class="tags are-medium is-centered mt-4">
+                      <span class="tag is-info">EC2</span>
+                      <span class="tag is-info">VPC</span>
+                      <span class="tag is-info">EBS</span>
+                      <span class="tag is-info">S3</span>
+                    </div>
+                    <p class="has-text-grey-light mt-4">
+                      <small>Deploy to AWS regions worldwide with full EC2 integration</small>
+                    </p>
+                  </div>
+                </div>
+                <footer class="card-footer">
+                  <span class="card-footer-item has-text-link">
+                    <span class="icon"><i class="fas fa-arrow-right"></i></span>
+                    <span>Configure AWS</span>
+                  </span>
+                </footer>
+              </div>
+            </a>
+          </div>
+
+          <!-- GCP Card -->
+          <div class="column is-half">
+            <a href="[[=URL('clouds/add/gcp')]]">
+              <div class="card provider-card has-text-centered">
+                <div class="card-content">
+                  <div class="content">
+                    <figure class="image is-128x128 mx-auto mb-4">
+                      <img src="[[=URL('static', 'img/logos/gcp.svg')]]" alt="Google Cloud Platform"
+                           onerror="this.src='[[=URL('static', 'img/logos/gcp-fallback.png')]]'">
+                    </figure>
+                    <h2 class="title is-4">Google Cloud Platform</h2>
+                    <p class="subtitle is-6 has-text-grey">Compute Engine VMs</p>
+                    <div class="tags are-medium is-centered mt-4">
+                      <span class="tag is-success">Compute</span>
+                      <span class="tag is-success">VPC</span>
+                      <span class="tag is-success">Disks</span>
+                      <span class="tag is-success">IAM</span>
+                    </div>
+                    <p class="has-text-grey-light mt-4">
+                      <small>Deploy to GCP zones with Service Account integration</small>
+                    </p>
+                  </div>
+                </div>
+                <footer class="card-footer">
+                  <span class="card-footer-item has-text-success">
+                    <span class="icon"><i class="fas fa-arrow-right"></i></span>
+                    <span>Configure GCP</span>
+                  </span>
+                </footer>
+              </div>
+            </a>
+          </div>
+
+          <!-- LXD Card -->
+          <div class="column is-half">
+            <a href="[[=URL('clusters/add')]]">
+              <div class="card provider-card has-text-centered">
+                <div class="card-content">
+                  <div class="content">
+                    <figure class="image is-128x128 mx-auto mb-4">
+                      <img src="[[=URL('static', 'img/logos/lxd.svg')]]" alt="LXD Containers"
+                           onerror="this.src='[[=URL('static', 'img/logos/lxd-fallback.png')]]'">
+                    </figure>
+                    <h2 class="title is-4">LXD Cluster</h2>
+                    <p class="subtitle is-6 has-text-grey">Linux Containers</p>
+                    <div class="tags are-medium is-centered mt-4">
+                      <span class="tag is-warning">Containers</span>
+                      <span class="tag is-warning">Fast</span>
+                      <span class="tag is-warning">Local</span>
+                      <span class="tag is-warning">Clusters</span>
+                    </div>
+                    <p class="has-text-grey-light mt-4">
+                      <small>Deploy to LXD clusters via API, SSH, or polling agent</small>
+                    </p>
+                  </div>
+                </div>
+                <footer class="card-footer">
+                  <span class="card-footer-item has-text-warning">
+                    <span class="icon"><i class="fas fa-arrow-right"></i></span>
+                    <span>Configure LXD</span>
+                  </span>
+                </footer>
+              </div>
+            </a>
+          </div>
+
+          <!-- Azure Card (Coming Soon) -->
+          <div class="column is-half">
+            <div class="card provider-card has-text-centered" style="opacity: 0.5; cursor: not-allowed;">
+              <div class="card-content">
+                <div class="content">
+                  <figure class="image is-128x128 mx-auto mb-4">
+                    <img src="[[=URL('static', 'img/logos/azure.svg')]]" alt="Microsoft Azure"
+                         onerror="this.src='[[=URL('static', 'img/logos/azure-fallback.png')]]'">
+                  </figure>
+                  <h2 class="title is-4">Microsoft Azure</h2>
+                  <p class="subtitle is-6 has-text-grey">Coming Soon</p>
+                  <div class="tags are-medium is-centered mt-4">
+                    <span class="tag is-light">VMs</span>
+                    <span class="tag is-light">VNet</span>
+                    <span class="tag is-light">Storage</span>
+                  </div>
+                  <p class="has-text-grey-light mt-4">
+                    <small>Azure support planned for future release</small>
+                  </p>
+                </div>
+              </div>
+              <footer class="card-footer">
+                <span class="card-footer-item has-text-grey-light">
+                  <span class="icon"><i class="fas fa-clock"></i></span>
+                  <span>Coming Soon</span>
+                </span>
+              </footer>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Help Section -->
+        <div class="box mt-6 has-background-light">
+          <h3 class="title is-5">
+            <span class="icon has-text-info"><i class="fas fa-info-circle"></i></span>
+            Getting Started
+          </h3>
+          <div class="content">
+            <p><strong>To add a cloud provider:</strong></p>
+            <ol>
+              <li>Click on your desired cloud provider above</li>
+              <li>Follow the wizard to configure credentials and settings</li>
+              <li>Test the connection before saving</li>
+              <li>Start deploying eggs to your new cloud!</li>
+            </ol>
+            <p class="has-text-grey">
+              <em>All credentials are encrypted and stored securely. You can choose to store them in the database,
+              AWS Secrets Manager, GCP Secret Manager, or Infisical.</em>
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+.provider-card {
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  height: 100%;
+}
+
+.provider-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  border-color: #3273dc;
+}
+
+.provider-card .image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.provider-card .image img {
+  max-height: 128px;
+  width: auto;
+}
+</style>

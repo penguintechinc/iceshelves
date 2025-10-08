@@ -1,0 +1,445 @@
+[[extend 'layout.html']]
+
+<section class="hero is-info">
+  <div class="hero-body">
+    <div class="container">
+      <h1 class="title">
+        <span class="icon"><i class="fab fa-aws"></i></span>
+        Add AWS Cloud
+      </h1>
+      <p class="subtitle">Configure Amazon Web Services EC2 deployment target</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+
+        <!-- Progress Steps -->
+        <nav class="breadcrumb is-centered" aria-label="breadcrumbs">
+          <ul id="wizard-breadcrumb">
+            <li class="is-active" data-step="1">
+              <a><span class="icon"><i class="fas fa-info-circle"></i></span><span>Basic Info</span></a>
+            </li>
+            <li data-step="2">
+              <a><span class="icon"><i class="fas fa-key"></i></span><span>Credentials</span></a>
+            </li>
+            <li data-step="3">
+              <a><span class="icon"><i class="fas fa-cog"></i></span><span>Configuration</span></a>
+            </li>
+            <li data-step="4">
+              <a><span class="icon"><i class="fas fa-check"></i></span><span>Review</span></a>
+            </li>
+          </ul>
+        </nav>
+
+        <form id="aws-wizard-form" method="POST" action="[[=URL('clouds/add/aws')]]">
+
+          <!-- Step 1: Basic Information -->
+          <div class="wizard-step" data-step="1">
+            <div class="box">
+              <h2 class="title is-4">AWS Cloud - Basic Information</h2>
+
+              <div class="field">
+                <label class="label">Cloud Name *</label>
+                <div class="control has-icons-left">
+                  <input class="input" type="text" name="name" id="cloud-name" required
+                         placeholder="e.g., AWS Production US-East">
+                  <span class="icon is-small is-left">
+                    <i class="fas fa-cloud"></i>
+                  </span>
+                </div>
+                <p class="help">Unique name to identify this AWS cloud</p>
+              </div>
+
+              <div class="field">
+                <label class="label">Description</label>
+                <div class="control">
+                  <textarea class="textarea" name="description" id="cloud-description"
+                            placeholder="Optional description"></textarea>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="label">AWS Region *</label>
+                <div class="control">
+                  <div class="select is-fullwidth">
+                    <select name="region" id="aws-region" required onchange="updateRegionInfo()">
+                      <option value="">Select AWS region...</option>
+                      <optgroup label="US East">
+                        <option value="us-east-1">us-east-1 (N. Virginia)</option>
+                        <option value="us-east-2">us-east-2 (Ohio)</option>
+                      </optgroup>
+                      <optgroup label="US West">
+                        <option value="us-west-1">us-west-1 (N. California)</option>
+                        <option value="us-west-2">us-west-2 (Oregon)</option>
+                      </optgroup>
+                      <optgroup label="Europe">
+                        <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                        <option value="eu-west-2">eu-west-2 (London)</option>
+                        <option value="eu-west-3">eu-west-3 (Paris)</option>
+                        <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+                        <option value="eu-north-1">eu-north-1 (Stockholm)</option>
+                      </optgroup>
+                      <optgroup label="Asia Pacific">
+                        <option value="ap-south-1">ap-south-1 (Mumbai)</option>
+                        <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+                        <option value="ap-southeast-2">ap-southeast-2 (Sydney)</option>
+                        <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+                        <option value="ap-northeast-2">ap-northeast-2 (Seoul)</option>
+                      </optgroup>
+                      <optgroup label="Other">
+                        <option value="ca-central-1">ca-central-1 (Canada)</option>
+                        <option value="sa-east-1">sa-east-1 (São Paulo)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                </div>
+                <p class="help" id="region-info">Select the AWS region for deployments</p>
+              </div>
+            </div>
+
+            <div class="buttons is-right">
+              <a href="[[=URL('clouds/add')]]" class="button">
+                <span class="icon"><i class="fas fa-times"></i></span>
+                <span>Cancel</span>
+              </a>
+              <button type="button" class="button is-primary" onclick="goToStep(2)">
+                <span>Next</span>
+                <span class="icon"><i class="fas fa-arrow-right"></i></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2: Credentials -->
+          <div class="wizard-step" data-step="2" style="display:none;">
+            <div class="box">
+              <h2 class="title is-4">AWS Credentials</h2>
+              <p class="subtitle is-6">Select existing credentials or add new ones</p>
+
+              <div class="field">
+                <label class="label">Credential Source</label>
+                <div class="control">
+                  <label class="radio">
+                    <input type="radio" name="credential_source" value="saved" checked
+                           onchange="toggleCredentialSource()">
+                    Use saved credentials
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="credential_source" value="iam_role"
+                           onchange="toggleCredentialSource()">
+                    Use IAM Instance Role (if IceShelves runs on EC2)
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="credential_source" value="new"
+                           onchange="toggleCredentialSource()">
+                    Add new credentials inline
+                  </label>
+                </div>
+              </div>
+
+              <!-- Saved Credentials Selector -->
+              <div id="saved-credentials-section">
+                <div class="field">
+                  <label class="label">Select AWS Credentials *</label>
+                  <div class="control">
+                    <div class="select is-fullwidth" id="credentials-select-container">
+                      <select name="credential_id" id="credential-select">
+                        <option value="">Loading credentials...</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="help">
+                    <a href="[[=URL('credentials/manage')]]" target="_blank">
+                      <span class="icon"><i class="fas fa-external-link-alt"></i></span>
+                      Manage credentials in your profile
+                    </a>
+                  </p>
+                </div>
+              </div>
+
+              <!-- IAM Role Section -->
+              <div id="iam-role-section" style="display:none;">
+                <article class="message is-info">
+                  <div class="message-body">
+                    <p><strong>Using IAM Instance Role</strong></p>
+                    <p>IceShelves will use the IAM role attached to the EC2 instance it's running on.</p>
+                    <p>Make sure the role has the following permissions:</p>
+                    <ul>
+                      <li>ec2:DescribeRegions</li>
+                      <li>ec2:DescribeInstances</li>
+                      <li>ec2:RunInstances</li>
+                      <li>ec2:TerminateInstances</li>
+                      <li>ec2:DescribeVpcs</li>
+                      <li>ec2:DescribeSubnets</li>
+                      <li>ec2:DescribeSecurityGroups</li>
+                    </ul>
+                  </div>
+                </article>
+              </div>
+
+              <!-- New Credentials Section -->
+              <div id="new-credentials-section" style="display:none;">
+                <article class="message is-warning">
+                  <div class="message-body">
+                    <strong>Note:</strong> It's recommended to add credentials in your
+                    <a href="[[=URL('credentials/manage')]]" target="_blank">profile</a> first,
+                    then select them here. This allows credential reuse across multiple clouds.
+                  </div>
+                </article>
+
+                <div class="field">
+                  <label class="label">AWS Access Key ID *</label>
+                  <div class="control has-icons-left">
+                    <input class="input" type="text" name="new_aws_access_key_id"
+                           pattern="AKIA[A-Z0-9]{16}"
+                           placeholder="AKIAIOSFODNN7EXAMPLE">
+                    <span class="icon is-small is-left">
+                      <i class="fas fa-key"></i>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="label">AWS Secret Access Key *</label>
+                  <div class="control has-icons-left has-icons-right">
+                    <input class="input" type="password" name="new_aws_secret_access_key"
+                           id="new-aws-secret"
+                           placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                    <span class="icon is-small is-left">
+                      <i class="fas fa-lock"></i>
+                    </span>
+                    <span class="icon is-small is-right is-clickable"
+                          onclick="togglePassword('new-aws-secret')">
+                      <i class="fas fa-eye"></i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="buttons is-right">
+              <button type="button" class="button" onclick="goToStep(1)">
+                <span class="icon"><i class="fas fa-arrow-left"></i></span>
+                <span>Back</span>
+              </button>
+              <button type="button" class="button is-primary" onclick="goToStep(3)">
+                <span>Next</span>
+                <span class="icon"><i class="fas fa-arrow-right"></i></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3: Configuration -->
+          <div class="wizard-step" data-step="3" style="display:none;">
+            <div class="box">
+              <h2 class="title is-4">Default Instance Configuration</h2>
+              <p class="subtitle is-6">Set default values for new EC2 instances</p>
+
+              <div class="field">
+                <label class="label">Default Instance Type</label>
+                <div class="control">
+                  <div class="select is-fullwidth">
+                    <select name="instance_type" id="instance-type" onchange="updatePricing()">
+                      <optgroup label="General Purpose (T3)">
+                        <option value="t3.nano">t3.nano - $0.0052/hr (2 vCPU, 0.5 GB RAM)</option>
+                        <option value="t3.micro" selected>t3.micro - $0.0104/hr (2 vCPU, 1 GB RAM)</option>
+                        <option value="t3.small">t3.small - $0.0208/hr (2 vCPU, 2 GB RAM)</option>
+                        <option value="t3.medium">t3.medium - $0.0416/hr (2 vCPU, 4 GB RAM)</option>
+                        <option value="t3.large">t3.large - $0.0832/hr (2 vCPU, 8 GB RAM)</option>
+                      </optgroup>
+                      <optgroup label="Compute Optimized (C6i)">
+                        <option value="c6i.large">c6i.large - $0.085/hr (2 vCPU, 4 GB RAM)</option>
+                        <option value="c6i.xlarge">c6i.xlarge - $0.17/hr (4 vCPU, 8 GB RAM)</option>
+                      </optgroup>
+                      <optgroup label="Memory Optimized (R6i)">
+                        <option value="r6i.large">r6i.large - $0.126/hr (2 vCPU, 16 GB RAM)</option>
+                        <option value="r6i.xlarge">r6i.xlarge - $0.252/hr (4 vCPU, 32 GB RAM)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                </div>
+                <p class="help" id="pricing-estimate">Estimated monthly cost: ~$7.50 (t3.micro @ 100% uptime)</p>
+              </div>
+
+              <div class="field">
+                <label class="label">Default AMI</label>
+                <div class="control">
+                  <input class="input" type="text" name="ami" id="ami-input"
+                         value="ami-0e2c8caa4b6378d8c"
+                         placeholder="ami-xxxxxxxxxxxxxxxxx">
+                </div>
+                <p class="help">
+                  Ubuntu 24.04 LTS (updates per region)
+                  <button type="button" class="button is-small is-link is-light ml-2"
+                          onclick="searchAMIs()">
+                    <span class="icon"><i class="fas fa-search"></i></span>
+                    <span>Search AMIs</span>
+                  </button>
+                </p>
+              </div>
+
+              <div class="field">
+                <label class="label">VPC & Subnet</label>
+                <div class="control">
+                  <div class="select is-fullwidth">
+                    <select name="subnet_id" id="subnet-select">
+                      <option value="">Use default VPC</option>
+                    </select>
+                  </div>
+                </div>
+                <p class="help">
+                  <button type="button" class="button is-small is-info is-light"
+                          onclick="loadVPCs()">
+                    <span class="icon"><i class="fas fa-sync"></i></span>
+                    <span>Load VPCs from AWS</span>
+                  </button>
+                </p>
+              </div>
+
+              <div class="field">
+                <label class="label">Security Groups</label>
+                <div class="control" id="security-groups-container">
+                  <label class="checkbox">
+                    <input type="checkbox" name="security_groups[]" value="default" checked>
+                    default
+                  </label>
+                </div>
+                <p class="help">
+                  <button type="button" class="button is-small is-info is-light"
+                          onclick="loadSecurityGroups()">
+                    <span class="icon"><i class="fas fa-sync"></i></span>
+                    <span>Load Security Groups</span>
+                  </button>
+                </p>
+              </div>
+
+              <div class="field">
+                <label class="label">SSH Key Pair</label>
+                <div class="control">
+                  <div class="select is-fullwidth">
+                    <select name="key_name" id="keypair-select">
+                      <option value="">No SSH key</option>
+                    </select>
+                  </div>
+                </div>
+                <p class="help">
+                  <button type="button" class="button is-small is-info is-light"
+                          onclick="loadKeyPairs()">
+                    <span class="icon"><i class="fas fa-sync"></i></span>
+                    <span>Load Key Pairs</span>
+                  </button>
+                </p>
+              </div>
+
+              <div class="columns">
+                <div class="column">
+                  <div class="field">
+                    <label class="label">EBS Volume Type</label>
+                    <div class="control">
+                      <div class="select is-fullwidth">
+                        <select name="volume_type">
+                          <option value="gp3" selected>gp3 (General Purpose SSD)</option>
+                          <option value="gp2">gp2 (General Purpose SSD - Legacy)</option>
+                          <option value="io2">io2 (Provisioned IOPS SSD)</option>
+                          <option value="st1">st1 (Throughput Optimized HDD)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="column">
+                  <div class="field">
+                    <label class="label">Volume Size (GB)</label>
+                    <div class="control">
+                      <input class="input" type="number" name="volume_size"
+                             value="20" min="8" max="16384">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="buttons is-right">
+              <button type="button" class="button" onclick="goToStep(2)">
+                <span class="icon"><i class="fas fa-arrow-left"></i></span>
+                <span>Back</span>
+              </button>
+              <button type="button" class="button is-primary" onclick="goToStep(4)">
+                <span>Next</span>
+                <span class="icon"><i class="fas fa-arrow-right"></i></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 4: Review & Test -->
+          <div class="wizard-step" data-step="4" style="display:none;">
+            <div class="box">
+              <h2 class="title is-4">Review & Test Connection</h2>
+
+              <div class="notification is-info is-light">
+                <h3 class="subtitle is-5">Configuration Summary</h3>
+                <table class="table is-fullwidth">
+                  <tbody>
+                    <tr>
+                      <th>Cloud Name:</th>
+                      <td id="summary-name"></td>
+                    </tr>
+                    <tr>
+                      <th>AWS Region:</th>
+                      <td id="summary-region"></td>
+                    </tr>
+                    <tr>
+                      <th>Instance Type:</th>
+                      <td id="summary-instance"></td>
+                    </tr>
+                    <tr>
+                      <th>Credentials:</th>
+                      <td id="summary-creds"></td>
+                    </tr>
+                    <tr>
+                      <th>Volume:</th>
+                      <td id="summary-volume"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="field">
+                <button type="button" class="button is-info is-fullwidth is-medium"
+                        id="test-connection-btn" onclick="testConnection()">
+                  <span class="icon"><i class="fas fa-plug"></i></span>
+                  <span>Test AWS Connection</span>
+                </button>
+              </div>
+
+              <div id="test-results" style="display:none;"></div>
+            </div>
+
+            <div class="buttons is-right">
+              <button type="button" class="button" onclick="goToStep(3)">
+                <span class="icon"><i class="fas fa-arrow-left"></i></span>
+                <span>Back</span>
+              </button>
+              <button type="submit" class="button is-success is-medium" id="save-btn" disabled>
+                <span class="icon"><i class="fas fa-check"></i></span>
+                <span>Save AWS Cloud</span>
+              </button>
+            </div>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="[[=URL('static', 'js/cloud-wizard.js')]]"></script>
+<script>
+// Load saved credentials on page load
+document.addEventListener('DOMContentLoaded', async function() {
+  await loadSavedCredentials();
+});
+</script>
