@@ -54,7 +54,7 @@ mypy==1.14.0
 pylxd==2.3.4
 # libvirt-python==10.8.0  # Optional: Only needed for KVM support - install manually if required
 PyYAML==6.0.2
-Jinja2==3.1.5
+Jinja2==3.1.6
 
 # Cloud Providers & Secrets Management
 boto3==1.35.98                          # AWS SDK (EC2, Secrets Manager)
