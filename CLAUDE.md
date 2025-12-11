@@ -55,10 +55,34 @@ This is a comprehensive project template incorporating best practices and patter
 - **SSO**: SAML/OAuth2 SSO as enterprise-only features
 - **Secrets**: Environment variable management
 - **Scanning**: Trivy vulnerability scanning, CodeQL analysis
+- **Code Quality**: All code must pass CodeQL security analysis
+
+## WaddleAI Integration (Optional)
+
+For projects requiring AI capabilities, integrate with WaddleAI located at `~/code/WaddleAI`.
+
+**When to Use WaddleAI:**
+- Natural language processing (NLP)
+- Machine learning model inference
+- AI-powered features and automation
+- Intelligent data analysis
+- Chatbots and conversational interfaces
+
+**Integration Pattern:**
+- WaddleAI runs as separate microservice container
+- Communicate via REST API or gRPC
+- Environment variable configuration for API endpoints
+- License-gate AI features as enterprise functionality
+
+See WaddleAI project at `~/code/WaddleAI` for integration details.
 
 ## PenguinTech License Server Integration
 
-All projects should integrate with the centralized PenguinTech License Server at `https://license.penguintech.io` for feature gating and enterprise functionality.
+All projects integrate with the centralized PenguinTech License Server at `https://license.penguintech.io` for feature gating and enterprise functionality.
+
+**IMPORTANT: License enforcement is ONLY enabled when project is marked as release-ready**
+- Development phase: All features available, no license checks
+- Release phase: License validation required, feature gating active
 
 ### Universal JSON Response Format
 
@@ -163,7 +187,7 @@ curl -X POST https://license.penguintech.io/api/v2/keepalive \
 
 ```python
 import requests
-from datetime import datetime, timedelta
+from functools import wraps
 
 class PenguinTechLicenseClient:
     def __init__(self, license_key, product, base_url="https://license.penguintech.io"):
@@ -183,13 +207,11 @@ class PenguinTechLicenseClient:
             f"{self.base_url}/api/v2/validate",
             json={"product": self.product}
         )
-
         if response.status_code == 200:
             data = response.json()
             if data.get("valid"):
                 self.server_id = data["metadata"].get("server_id")
                 return data
-
         return {"valid": False, "message": f"Validation failed: {response.text}"}
 
     def check_feature(self, feature):
@@ -198,38 +220,12 @@ class PenguinTechLicenseClient:
             f"{self.base_url}/api/v2/features",
             json={"product": self.product, "feature": feature}
         )
-
         if response.status_code == 200:
-            data = response.json()
-            return data.get("features", [{}])[0].get("entitled", False)
-
+            return response.json().get("features", [{}])[0].get("entitled", False)
         return False
 
-    def keepalive(self, usage_data=None):
-        """Send keepalive with optional usage statistics"""
-        if not self.server_id:
-            validation = self.validate()
-            if not validation.get("valid"):
-                return validation
-
-        payload = {
-            "product": self.product,
-            "server_id": self.server_id
-        }
-
-        if usage_data:
-            payload.update(usage_data)
-
-        response = self.session.post(
-            f"{self.base_url}/api/v2/keepalive",
-            json=payload
-        )
-
-        return response.json()
-
-# Usage example
+# Feature gating decorator
 def requires_feature(feature_name):
-    """Decorator to gate functionality behind license features"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -238,11 +234,6 @@ def requires_feature(feature_name):
             return func(*args, **kwargs)
         return wrapper
     return decorator
-
-@requires_feature("advanced_feature")
-def advanced_functionality():
-    """This function only works with professional+ licenses"""
-    pass
 ```
 
 #### Go Client Example
@@ -253,7 +244,6 @@ package license
 import (
     "bytes"
     "encoding/json"
-    "fmt"
     "net/http"
     "time"
 )
@@ -266,21 +256,6 @@ type Client struct {
     HTTPClient *http.Client
 }
 
-type ValidationResponse struct {
-    Valid     bool   `json:"valid"`
-    Customer  string `json:"customer"`
-    Tier      string `json:"tier"`
-    Features  []Feature `json:"features"`
-    Metadata  struct {
-        ServerID string `json:"server_id"`
-    } `json:"metadata"`
-}
-
-type Feature struct {
-    Name     string `json:"name"`
-    Entitled bool   `json:"entitled"`
-}
-
 func NewClient(licenseKey, product string) *Client {
     return &Client{
         LicenseKey: licenseKey,
@@ -290,63 +265,11 @@ func NewClient(licenseKey, product string) *Client {
     }
 }
 
-func (c *Client) Validate() (*ValidationResponse, error) {
+func (c *Client) Validate() (map[string]interface{}, error) {
     payload := map[string]string{"product": c.Product}
+    jsonData, _ := json.Marshal(payload)
 
-    resp, err := c.makeRequest("POST", "/api/v2/validate", payload)
-    if err != nil {
-        return nil, err
-    }
-
-    var validation ValidationResponse
-    if err := json.Unmarshal(resp, &validation); err != nil {
-        return nil, err
-    }
-
-    if validation.Valid {
-        c.ServerID = validation.Metadata.ServerID
-    }
-
-    return &validation, nil
-}
-
-func (c *Client) CheckFeature(feature string) (bool, error) {
-    payload := map[string]string{
-        "product": c.Product,
-        "feature": feature,
-    }
-
-    resp, err := c.makeRequest("POST", "/api/v2/features", payload)
-    if err != nil {
-        return false, err
-    }
-
-    var response struct {
-        Features []Feature `json:"features"`
-    }
-
-    if err := json.Unmarshal(resp, &response); err != nil {
-        return false, err
-    }
-
-    if len(response.Features) > 0 {
-        return response.Features[0].Entitled, nil
-    }
-
-    return false, nil
-}
-
-func (c *Client) makeRequest(method, endpoint string, payload interface{}) ([]byte, error) {
-    jsonData, err := json.Marshal(payload)
-    if err != nil {
-        return nil, err
-    }
-
-    req, err := http.NewRequest(method, c.BaseURL+endpoint, bytes.NewBuffer(jsonData))
-    if err != nil {
-        return nil, err
-    }
-
+    req, _ := http.NewRequest("POST", c.BaseURL+"/api/v2/validate", bytes.NewBuffer(jsonData))
     req.Header.Set("Authorization", "Bearer "+c.LicenseKey)
     req.Header.Set("Content-Type", "application/json")
 
@@ -356,17 +279,9 @@ func (c *Client) makeRequest(method, endpoint string, payload interface{}) ([]by
     }
     defer resp.Body.Close()
 
-    var buf bytes.Buffer
-    _, err = buf.ReadFrom(resp.Body)
-    if err != nil {
-        return nil, err
-    }
-
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("API request failed: %d", resp.StatusCode)
-    }
-
-    return buf.Bytes(), nil
+    var result map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result, nil
 }
 ```
 
@@ -377,6 +292,10 @@ func (c *Client) makeRequest(method, endpoint string, payload interface{}) ([]by
 LICENSE_KEY=PENG-XXXX-XXXX-XXXX-XXXX-ABCD
 LICENSE_SERVER_URL=https://license.penguintech.io
 PRODUCT_NAME=your-product-identifier
+
+# Release mode (enables license enforcement)
+RELEASE_MODE=false  # Development (default)
+RELEASE_MODE=true   # Production (explicitly set)
 
 # Optional: Custom License Server (for testing/development)
 LICENSE_SERVER_URL=https://license-dev.penguintech.io
@@ -564,11 +483,12 @@ make license-check-features  # Check available features
 ## CI/CD Pipeline Features
 
 ### Testing Pipeline
-- Multi-language testing (Go, Python, Node.js)
+- Multi-language testing (Go 1.23+, Python 3.12/3.13)
 - Parallel test execution for performance
 - Code coverage reporting
-- Security scanning integration
+- Security scanning integration (gosec, bandit, Trivy)
 - Performance regression testing
+- **See detailed workflow documentation:** [docs/WORKFLOWS.md](docs/WORKFLOWS.md)
 
 ### Build Pipeline
 - **Multi-architecture Docker builds** (amd64/arm64) using separate parallel workflows
@@ -577,24 +497,94 @@ make license-check-features  # Check available features
 - **Optimized build times**: Prioritize speed while maintaining full functionality
 - Dependency caching for faster builds
 - Artifact management and versioning
-- Container registry integration
+- Container registry integration (ghcr.io)
 - Build optimization and layer caching
+- Multi-stage builds for Go and Python services
 
 ### Deployment Pipeline
-- Environment-specific deployment configs
+- Environment-specific deployment configs (dev, staging, production)
 - Blue-green deployment support
-- Rollback capabilities
+- Rollback capabilities with version control
 - Health check validation
-- Automated database migrations
+- Automated database migrations (Alembic)
+- Deployment agent coordination
+
+### Version Management & Release Automation
+- **Version File Monitoring**: `.version` file path triggers automated releases
+- **Epoch64 Timestamp Detection**: Extracts Unix timestamp from version (vMajor.Minor.Patch.epoch64)
+- **Semantic Version Extraction**: Intelligently parses version components
+- **Pre-release Creation**: Automatic GitHub pre-release generation
+- **Release Notes Generation**: Service details, cloud support, deployment agent info
+- **Duplicate Prevention**: Checks for existing releases before creation
+- **Example Version Format**: `1.0.0.1737727200` (Major.Minor.Patch.epoch64)
+
+### Security Scanning
+
+**Go Services (gosec)**:
+- Static analysis for security vulnerabilities
+- Pattern detection for unsafe code
+- Integration with CI pipeline
+- SARIF report generation
+
+**Python Services (bandit + Safety)**:
+- bandit for security issue detection
+- Safety for dependency vulnerability scanning
+- Integration with CI pipeline
+- SARIF report generation
+
+**Container Security (Trivy)**:
+- Image vulnerability scanning
+- Filesystem vulnerability detection
+- SBOM generation
+- GitHub Security tab integration
 
 ### Quality Gates
-- Required code review process
-- Automated testing requirements
-- Security scan pass requirements
+- Required code review process (2+ approvals)
+- Automated testing requirements (80%+ coverage target)
+- Security scan pass requirements (gosec, bandit, Trivy)
+- Code quality standards (see [docs/STANDARDS.md](docs/STANDARDS.md))
 - Performance benchmark validation
 - Documentation update verification
 
 ## Critical Development Rules
+
+### Development Philosophy: Safe, Stable, and Feature-Complete
+
+**NEVER take shortcuts or the "easy route" - ALWAYS prioritize safety, stability, and feature completeness**
+
+#### Core Principles
+- **No Quick Fixes**: Resist quick workarounds or partial solutions
+- **Complete Features**: Fully implemented with proper error handling and validation
+- **Safety First**: Security, data integrity, and fault tolerance are non-negotiable
+- **Stable Foundations**: Build on solid, tested components
+- **Future-Proof Design**: Consider long-term maintainability and scalability
+- **No Technical Debt**: Address issues properly the first time
+
+#### Red Flags (Never Do These)
+- Skipping input validation "just this once"
+- Hardcoding credentials or configuration
+- Ignoring error returns or exceptions
+- Commenting out failing tests to make CI pass
+- Deploying without proper testing
+- Using deprecated or unmaintained dependencies
+- Implementing partial features with "TODO" placeholders
+- Bypassing security checks for convenience
+- Assuming data is valid without verification
+- Leaving debug code or backdoors in production
+
+#### Quality Checklist Before Completion
+- All error cases handled properly
+- Unit tests cover all code paths
+- Integration tests verify component interactions
+- Security requirements fully implemented
+- Performance meets acceptable standards
+- Documentation complete and accurate
+- Code review standards met
+- No hardcoded secrets or credentials
+- Logging and monitoring in place
+- Build passes in containerized environment
+- No security vulnerabilities in dependencies
+- Edge cases and boundary conditions tested
 
 ### Git Workflow
 - **NEVER commit automatically** unless explicitly requested by the user
@@ -631,6 +621,19 @@ make license-check-features  # Check available features
   4. Document security fixes in commit messages
   5. Verify no new vulnerabilities introduced
 
+### Linting & Code Quality Requirements
+- **ALL code must pass linting** before commit - no exceptions
+- **Python**: flake8, black, isort, mypy (type checking), bandit (security)
+- **JavaScript/TypeScript**: ESLint, Prettier
+- **Go**: golangci-lint (includes staticcheck, gosec, etc.)
+- **Ansible**: ansible-lint
+- **Docker**: hadolint
+- **YAML**: yamllint
+- **Markdown**: markdownlint
+- **Shell**: shellcheck
+- **CodeQL**: All code must pass CodeQL security analysis
+- **PEP Compliance**: Python code must follow PEP 8, PEP 257 (docstrings), PEP 484 (type hints)
+
 ### Build & Deployment Requirements
 - **NEVER mark tasks as completed until successful build verification**
 - All Go and Python builds MUST be executed within Docker containers for consistency
@@ -659,8 +662,7 @@ FROM debian:stable-slim AS runtime
 
 ### GitHub Actions Multi-Arch Build Strategy
 ```yaml
-# Single workflow with multi-arch builds for each container
-name: Build Containers
+# Parallel multi-arch builds for each container
 jobs:
   build-app:
     runs-on: ubuntu-latest
@@ -669,20 +671,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           context: ./apps/app
-          file: ./apps/app/Dockerfile
-
-  build-manager:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: docker/build-push-action@v4
-        with:
-          platforms: linux/amd64,linux/arm64
-          context: ./apps/manager
-          file: ./apps/manager/Dockerfile
-
-# Separate parallel workflows for each container type (app, manager, etc.)
-# Each workflow builds multi-arch for that specific container
-# Minimize build time through parallel container builds and caching
+# Separate parallel workflows per container for optimal build times
 ```
 
 ### Code Quality
@@ -704,23 +693,15 @@ jobs:
 ### Performance Best Practices
 - **Always implement async/concurrent patterns** to maximize CPU and memory utilization
 - **Python**: Use asyncio, threading, multiprocessing where appropriate
-  - **Modern Python optimizations**: Leverage dataclasses, typing, and memory-efficient features from Python 3.12+
-  - **Dataclasses**: Use @dataclass for structured data to reduce memory overhead and improve performance
-  - **Type hints**: Use comprehensive typing for better optimization and IDE support
-  - **Advanced features**: Utilize slots, frozen dataclasses, and other memory-efficient patterns
+  - Use @dataclass with slots for memory efficiency
+  - Comprehensive type hints required
 - **Go**: Leverage goroutines, channels, and the Go runtime scheduler
-- **Networking Applications**: Implement high-performance networking optimizations:
-  - eBPF/XDP for kernel-level packet processing and filtering
-  - AF_XDP for high-performance user-space packet processing
-  - NUMA-aware memory allocation and CPU affinity
-  - Zero-copy networking techniques where applicable
-  - Connection pooling and persistent connections
-  - Load balancing with CPU core pinning
+- **Networking Applications**: eBPF/XDP, AF_XDP, NUMA-aware allocation, zero-copy networking
 - **Memory Management**: Optimize for cache locality and minimize allocations
 - **I/O Operations**: Use non-blocking I/O, buffering, and batching strategies
 - **Database Access**: Implement connection pooling, prepared statements, and query optimization
 
-### Documentation
+### Documentation Standards
 - **README.md**: Keep as overview and pointer to comprehensive docs/ folder
 - **docs/ folder**: Create comprehensive documentation for all aspects
 - **RELEASE_NOTES.md**: Maintain in docs/ folder, prepend new version releases to top
@@ -728,6 +709,20 @@ jobs:
 - API documentation must be comprehensive
 - Architecture decisions should be documented
 - Security procedures must be documented
+- **Build status badges**: Always include in README.md
+- **ASCII art**: Include catchy, project-appropriate ASCII art in README
+- **Company homepage**: Point to www.penguintech.io
+- **License**: All projects use Limited AGPL3 with preamble for fair use
+
+### File Size Limits
+- **Maximum file size**: 25,000 characters for ALL code and markdown files
+- **Split large files**: Decompose into modules, libraries, or separate documents
+- **CLAUDE.md exception**: Maximum 39,000 characters (only exception to 25K rule)
+- **High-level approach**: CLAUDE.md contains high-level context and references detailed docs
+- **Documentation strategy**: Create detailed documentation in `docs/` folder and link to them from CLAUDE.md
+- **Keep focused**: Critical context, architectural decisions, and workflow instructions only
+- **User approval required**: ALWAYS ask user permission before splitting CLAUDE.md files
+- **Use Task Agents**: Utilize task agents (subagents) to be more expedient and efficient when making changes to large files
 
 ### README.md Standards
 - **ALWAYS include build status badges** at the top of every README.md:
@@ -815,34 +810,7 @@ jobs:
     - `{app_name}-docs/` - Documentation website
 - **Sparse Submodule Setup**:
   ```bash
-  # First, check if folders exist in the website repo and create if needed
-  git clone https://github.com/penguintechinc/website.git temp-website
-  cd temp-website
-
-  # Create project folders if they don't exist
-  mkdir -p {app_name}/
-  mkdir -p {app_name}-docs/
-
-  # Create initial template files if folders are empty
-  if [ ! -f {app_name}/package.json ]; then
-    # Initialize Node.js marketing website
-    echo "Creating initial marketing website structure..."
-    # Add basic package.json, index.js, etc.
-  fi
-
-  if [ ! -f {app_name}-docs/README.md ]; then
-    # Initialize documentation website
-    echo "Creating initial docs website structure..."
-    # Add basic markdown structure
-  fi
-
-  # Commit and push if changes were made
-  git add .
-  git commit -m "Initialize website folders for {app_name}"
-  git push origin main
-  cd .. && rm -rf temp-website
-
-  # Now add sparse submodule for website integration
+  # Add sparse submodule for website integration
   git submodule add --name websites https://github.com/penguintechinc/website.git websites
   git config -f .gitmodules submodule.websites.sparse-checkout true
 
@@ -854,7 +822,27 @@ jobs:
   git submodule update --init websites
   ```
 - **Website Maintenance**: Both websites must be kept current with project releases and feature updates
-- **First-Time Setup**: If project folders don't exist in the website repo, they must be created and initialized with basic templates before setting up the sparse submodule
+
+## Application Architecture
+
+**ALWAYS use microservices architecture** - decompose into specialized, independently deployable containers:
+
+1. **Web UI Container**: ReactJS frontend (separate container, served via nginx)
+2. **Application API Container**: Flask + Flask-Security-Too backend (separate container)
+3. **Connector Container**: External system integration (separate container)
+
+**Default Container Separation**: Web UI and API are ALWAYS separate containers by default. This provides:
+- Independent scaling of frontend and backend
+- Different resource allocation per service
+- Separate deployment lifecycles
+- Technology-specific optimization
+
+**Benefits**:
+- Independent scaling
+- Technology diversity
+- Team autonomy
+- Resilience
+- Continuous deployment
 
 ## Common Integration Patterns
 
