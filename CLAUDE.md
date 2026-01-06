@@ -191,13 +191,48 @@ project-name/
 
 ## Development Workflow
 
-### Local Development Setup
+### Quick Start
+
 ```bash
 git clone <repository-url>
 cd project-name
 make setup                    # Install dependencies
 make dev                      # Start development environment
+make seed-mock-data          # Populate with 3-4 test items per feature
 ```
+
+### Essential Documentation (Complete for Your Project)
+
+Before starting development on this template, projects MUST complete and maintain these three critical documentation files:
+
+**📚 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - LOCAL DEVELOPMENT SETUP GUIDE
+- Prerequisites and installation for your tech stack
+- Environment configuration specifics
+- Starting your services locally
+- Development workflow with mock data injection
+- Common developer tasks and troubleshooting
+- Tips for your specific architecture
+
+**📚 [docs/TESTING.md](docs/TESTING.md)** - TESTING & VALIDATION GUIDE
+- Mock data scripts (3-4 items per feature pattern)
+- Smoke tests (mandatory verification)
+- Unit, integration, and E2E testing
+- Performance testing procedures
+- Cross-architecture testing with QEMU
+- Pre-commit test execution order
+
+**📚 [docs/PRE_COMMIT.md](docs/PRE_COMMIT.md)** - PRE-COMMIT CHECKLIST
+- Required steps before every git commit
+- Smoke tests (mandatory, <2 min)
+- Mock data seeding for feature testing
+- Screenshot capture with realistic data
+- Security scanning requirements
+- Build and test verification steps
+
+**🔄 Workflow**: DEVELOPMENT.md → TESTING.md → PRE_COMMIT.md (integrated flow)
+- Developers follow DEVELOPMENT.md to set up locally
+- Reference TESTING.md for testing patterns and mock data
+- Run PRE_COMMIT.md checklist before commits (includes smoke tests + screenshots)
 
 ### Essential Commands
 ```bash
@@ -218,6 +253,7 @@ make deploy-prod              # Deploy to production
 make test-unit               # Run unit tests
 make test-integration        # Run integration tests
 make test-e2e                # Run end-to-end tests
+make smoke-test              # Run smoke tests (build, run, API, page loads)
 
 # License Management
 make license-validate        # Validate license
@@ -254,6 +290,7 @@ make license-check-features  # Check available features
 - ✅ All error cases handled properly
 - ✅ Unit tests cover all code paths
 - ✅ Integration tests verify component interactions
+- ✅ Smoke tests verify build, run, API health, and page loads
 - ✅ Security requirements fully implemented
 - ✅ Performance meets acceptable standards
 - ✅ Documentation complete and accurate
@@ -281,6 +318,26 @@ make license-check-features  # Check available features
 - **Do NOT commit if security vulnerabilities are found** - fix all issues first
 - **Document vulnerability fixes** in commit message if applicable
 
+**Before Every Commit - Screenshots**:
+- **Requirement**: Update UI screenshots with current application state when features change
+- **Prerequisites**: Start development environment with mock data populated
+  ```bash
+  make dev                    # Start all services
+  make seed-mock-data         # Populate with 3-4 test items per feature
+  ```
+- **Capture screenshots**: Run from project root (auto-removes old, captures fresh)
+  ```bash
+  node scripts/capture-screenshots.cjs
+  # Or via npm script if configured
+  npm run screenshots
+  ```
+- **Purpose**: Screenshots should showcase features with realistic mock data (3-4 items)
+  - Demonstrates feature functionality and purpose
+  - Shows data in context (products list, orders, user profiles, etc.)
+  - Updated whenever UI changes or new features added
+- **Location**: Screenshots saved to `docs/screenshots/`
+- **Commit**: Include updated screenshots with relevant feature/UI changes
+
 **Before Every Commit - API Testing**:
 - **Create and run API testing scripts** for each modified container service
 - **Testing scope**: All new endpoints and modified functionality
@@ -292,11 +349,13 @@ make license-check-features  # Check available features
 - **Test coverage**: Health checks, authentication, CRUD operations, error cases
 - **Command pattern**: `cd services/<service-name> && npm run test:api` or equivalent
 
-**Before Every Commit - Screenshots**:
-- **Run screenshot tool to update UI screenshots in documentation**
-  - Run `cd services/webui && npm run screenshots` to capture current UI state
-  - This automatically removes old screenshots and captures fresh ones
-  - Commit updated screenshots with relevant feature/documentation changes
+**Before Every Commit - Smoke Tests**:
+- **Create and run smoke tests** to verify basic functionality (build, runtime, API health, UI loads)
+- **Mandatory requirements**: All must be created and passing before commit
+- **Run before commit**: `make smoke-test` or `./tests/smoke/run-all.sh`
+- **Continuous validation**: Smoke tests prevent regressions in core functionality
+
+📚 **Detailed smoke testing requirements**: [Testing Documentation](docs/TESTING.md#smoke-tests)
 
 ### Local State Management (Crash Recovery)
 - **ALWAYS maintain local .PLAN and .TODO files** for crash recovery
@@ -448,12 +507,21 @@ Comprehensive development standards are documented separately to keep this file 
 - Debian-slim base images
 - Docker Compose for local development
 - Minimal host port exposure
+- **Cross-Architecture Testing**: Before final commit, test on alternate architecture:
+  - If developing on amd64: Use QEMU to build and test arm64 (`docker buildx build --platform linux/arm64 ...`)
+  - If developing on arm64: Use QEMU to build and test amd64 (`docker buildx build --platform linux/amd64 ...`)
+  - Ensures multi-architecture compatibility and prevents platform-specific bugs
+  - Command: `docker buildx build --platform linux/amd64,linux/arm64 -t image:tag --push .`
 
 **Testing**:
 - Unit tests: Network isolated, mocked dependencies
 - Integration tests: Component interactions
 - E2E tests: Critical workflows
 - Performance tests: Scalability validation
+- Smoke tests: Build, run, API health, page/tab load verification (mandatory)
+- Mock data: 3-4 items per feature/entity for development
+
+📚 **Complete Testing Guide**: [Testing Documentation](docs/TESTING.md) includes smoke tests, unit tests, integration tests, E2E tests, performance tests, mock data scripts, and cross-architecture testing with QEMU
 
 **Security**:
 - TLS 1.2+ required
@@ -530,7 +598,14 @@ Key integration patterns documented:
 Results logged to: `/tmp/pre-commit-<project>-<epoch>/summary.log`
 
 Quick reference (see [docs/PRE_COMMIT.md](docs/PRE_COMMIT.md) for full details):
-1. Linters → 2. Security scans → 3. No secrets → 4. Build & Run → 5. Tests → 6. Version update → 7. Docker debian-slim
+1. Linters → 2. Security scans → 3. No secrets → 4. Build & Run → 5. Smoke tests → 6. Tests → 7. Version update → 8. Docker debian-slim
+
+**Smoke tests are mandatory in pre-commit checklist:**
+- Build verification for all containers
+- Runtime health checks for all services
+- API health endpoint validation
+- Web UI page and tab load verification
+- Must pass before proceeding to full test suite
 
 **Only commit when asked** — run pre-commit script, verify all checks pass, then wait for approval before `git commit`.
 

@@ -92,13 +92,13 @@ A build package is a single, independently deployable service or application. Fo
 
 ### Project Services
 
-**Project Template** includes three services:
+**Iceshelves** includes three services:
 
 | Service | Directory | Dockerfile | Architectures | Notes |
 |---------|-----------|-----------|---------------|-------|
-| flask-backend | `services/flask-backend/` | `services/flask-backend/Dockerfile` | amd64, arm64 | Python 3.13, Flask, PyDAL |
-| go-backend | `services/go-backend/` | `services/go-backend/Dockerfile` | amd64, arm64 | Go 1.24, high-performance networking |
-| webui | `services/webui/` | `services/webui/Dockerfile` | amd64, arm64 | Node.js 18+, React frontend |
+| flask-backend | `services/flask-backend/` | `services/flask-backend/Dockerfile` | amd64, arm64 | Python 3.13, Flask, PyDAL - Shelf and monitoring data management |
+| go-backend | `services/go-backend/` | `services/go-backend/Dockerfile` | amd64, arm64 | Go 1.24, high-performance networking - Real-time ice monitoring telemetry |
+| webui | `services/webui/` | `services/webui/Dockerfile` | amd64, arm64 | Node.js 18+, React frontend - Interactive dashboard and visualization |
 
 ### Workflow Files
 
@@ -1133,13 +1133,13 @@ docker build -t test . || docker run -it [image-id] /bin/bash
 
 ### Service Registry
 
-**Project Template Services**:
+**Iceshelves Services**:
 
 | Service | Language | Path | Tests | Security | Notes |
 |---------|----------|------|-------|----------|-------|
-| flask-backend | Python | `services/flask-backend/` | pytest | bandit, safety check | Python 3.13, Flask, PyDAL |
-| go-backend | Go | `services/go-backend/` | go test | gosec, go mod audit | Go 1.24, high-performance networking |
-| webui | Node.js | `services/webui/` | jest | npm audit | React frontend, Node.js 18+ |
+| flask-backend | Python | `services/flask-backend/` | pytest | bandit, safety check | Shelf management, monitoring data, user/role RBAC |
+| go-backend | Go | `services/go-backend/` | go test | gosec, go mod audit | Real-time telemetry collection, high-throughput data ingestion |
+| webui | Node.js | `services/webui/` | jest | npm audit | Interactive dashboard, monitoring visualizations, alerts UI |
 
 ### Custom Variables
 
@@ -1177,17 +1177,23 @@ env:
 
 ### Project-Specific Notes
 
-**This is a reference template for all PenguinTech projects**
+**Iceshelves CI/CD Architecture**
 
-All PenguinTech projects follow the same workflow structure and CI/CD patterns documented in this file. Use this as a reference guide when:
+Iceshelves follows the standard PenguinTech workflow structure with three independently deployable services:
 
-- Setting up new projects
+- **flask-backend**: Handles shelf data, monitoring readings, and RBAC authentication
+- **go-backend**: Optimized for real-time telemetry ingestion and high-throughput data processing
+- **webui**: React-based dashboard for shelf monitoring, alerts, and data visualization
+
+All services build and deploy independently but are coordinated through the `.version` file for consistent releases. Use this guide when:
+
+- Adding new monitoring features or data types
+- Scaling telemetry collection (go-backend considerations)
+- Updating visualization components (webui improvements)
+- Modifying shelf management APIs (flask-backend extensions)
 - Troubleshooting CI/CD issues
-- Adding new services
-- Implementing security updates
-- Optimizing build performance
 
-Customization should be minimal and follow the patterns established in this template.
+Customization should follow established PenguinTech patterns while remaining specific to iceshelves' domain.
 
 ### Known Issues & Workarounds
 
@@ -1200,13 +1206,15 @@ Customization should be minimal and follow the patterns established in this temp
 
 ### Performance Benchmarks
 
-**Record baseline performance for your project**:
+**Iceshelves baseline performance targets**:
 
 | Workflow | Avg Time | With Cache | Notes |
 |----------|----------|-----------|-------|
-| flask-backend | [time] | [time] | [Notes] |
-| go-backend | [time] | [time] | [Notes] |
-| webui | [time] | [time] | [Notes] |
+| flask-backend | 8-12 min | 4-6 min | Python 3.13, Flask, PyDAL dependencies |
+| go-backend | 6-10 min | 3-5 min | Go 1.24, static compilation, no runtime deps |
+| webui | 7-11 min | 4-7 min | Node.js 18+, React build and optimization |
+
+Build times may vary based on Docker cache state and GitHub Actions runner availability.
 
 ### Support & Documentation
 
@@ -1359,11 +1367,12 @@ When workflow fails:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2025-12-11 | Customized for Project Template: Three services (flask-backend, go-backend, webui), PenguinTech reference template |
+| 1.1.0 | 2026-01-06 | Customized for Iceshelves: Real-time ice shelf monitoring system with telemetry, dashboard, and RBAC |
+| 1.0.0 | 2025-12-11 | Based on Project Template: Three services (flask-backend, go-backend, webui), PenguinTech reference template |
 
 ---
 
-**Last Updated**: December 11, 2025
-**Template Version**: 1.0.0
-**Project**: Project Template
+**Last Updated**: January 6, 2026
+**Project Version**: 1.1.0
+**Project**: Iceshelves - Real-time Ice Shelf Monitoring System
 **For Questions**: Refer to `docs/STANDARDS.md` or `CLAUDE.md`
