@@ -1,0 +1,55 @@
+helm_repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+    category: general
+    enabled: true
+  - name: ingress-nginx
+    url: https://kubernetes.github.io/ingress-nginx
+    category: networking
+    enabled: true
+  - name: jetstack
+    url: https://charts.jetstack.io
+    category: security
+    enabled: true
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+    category: monitoring
+    enabled: true
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+    category: monitoring
+    enabled: true
+  - name: elastic
+    url: https://helm.elastic.co
+    category: logging
+    enabled: true
+  - name: hashicorp
+    url: https://helm.releases.hashicorp.com
+    category: security
+    enabled: true
+  - name: traefik
+    url: https://traefik.github.io/charts
+    category: networking
+    enabled: false
+  - name: argo
+    url: https://argoproj.github.io/argo-helm
+    category: cicd
+    enabled: false
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+    category: security
+    enabled: false
+
+docker_registries:
+  - name: dockerhub
+    url: https://registry.hub.docker.com
+    registry_type: docker
+    enabled: true
+  - name: ghcr
+    url: https://ghcr.io
+    registry_type: docker
+    enabled: true
+  - name: quay
+    url: https://quay.io
+    registry_type: docker
+    enabled: false

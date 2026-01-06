@@ -111,9 +111,9 @@ jobs:
           ### Cloud Deployment Management
 
           This release includes:
-          - **Manager Application**: py4web-based deployment management
-          - **API Service**: Go-based API for cloud integrations
-          - **Deployment Agent**: Python agent for air-gapped environments
+          - **Flask Backend**: Flask + PyDAL backend for auth, users, standard APIs
+          - **Go Backend**: High-performance API for XDP/AF_XDP, NUMA operations
+          - **WebUI**: React frontend with role-based access control
           - **Cloud Support**: AWS EC2, GCP Compute Engine, LXD, KVM
           - **Docker Images**: Multi-architecture (amd64, arm64)
 

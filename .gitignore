@@ -419,11 +419,6 @@ tramp
 *.sops.yaml
 *.sops.yml
 
-# py4web specific
-*/web/apps/.service/*/*
-*/web/apps/.service/*/*/*
-*/web/apps/.service/*
-
 # Misc
 *.orig
 *.rej
