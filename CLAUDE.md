@@ -625,6 +625,14 @@ docker compose up -d --build <service-name>
 
 📚 **Complete CI/CD documentation**: [Workflows](docs/WORKFLOWS.md) | [Standards](docs/STANDARDS.md)
 
+## License & Legal
+
+**License File**: `LICENSE.md` (located at project root)
+
+**License Type**: Limited AGPL-3.0 with commercial use restrictions and Contributor Employer Exception
+
+The `LICENSE.md` file is located at the project root following industry standards. This project uses a modified AGPL-3.0 license with additional exceptions for commercial use and special provisions for companies employing contributors.
+
 ## Template Customization
 
 **Adding Languages/Services**: Create in `services/`, add Dockerfile, update CI/CD, add linting/testing, update docs.
