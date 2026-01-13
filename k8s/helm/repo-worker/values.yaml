@@ -1,0 +1,132 @@
+# Repo-Worker Helm Chart Values
+# Multi-architecture Helm and Docker Repository Service
+
+replicaCount: 2
+
+image:
+  repository: iceshelves/repo-worker
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Python async worker configuration
+workers: 4
+workerClass: uvloop
+
+# S3-compatible storage configuration (required)
+storage:
+  s3:
+    endpoint: "http://minio:9000"
+    bucket: "repository"
+    region: ""
+    useSSL: false
+    existingSecret: "minio-credentials"
+    secretKeys:
+      accessKey: access-key
+      secretKey: secret-key
+
+# Authentication configuration
+auth:
+  enabled: true
+  flaskBackendUrl: "http://flask-backend:5000"
+  anonymousPull: true
+  jwtSecretKey: ""
+  existingSecret: ""
+
+# Cache configuration
+cache:
+  enabled: true
+  maxSizeGb: 100
+  mutableTagPatterns:
+    - "latest"
+    - "*nightly*"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 5050
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: registry.local
+      paths:
+        - path: /v2/
+          pathType: Prefix
+        - path: /charts/
+          pathType: Prefix
+        - path: /index.yaml
+          pathType: Exact
+  tls: []
+
+# Resource limits
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+# Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Security context
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+
+# Health checks
+livenessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  path: /readyz
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# MinIO subchart configuration
+minio:
+  enabled: true
+  auth:
+    rootUser: minioadmin
+    rootPassword: ""
+  persistence:
+    enabled: true
+    size: 100Gi
+  service:
+    type: ClusterIP
+    apiPort: 9000
+    consolePort: 9001

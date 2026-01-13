@@ -1,0 +1,59 @@
+# Repo-Worker Default Configuration
+# S3-compatible storage is REQUIRED (MinIO, AWS S3, GCS, etc.)
+
+server:
+  host: "0.0.0.0"
+  port: 5050
+  debug: false
+  workers: 4
+
+storage:
+  # S3-compatible storage (required)
+  # Default: MinIO (included in docker-compose and k8s deployment)
+  s3:
+    endpoint: "http://minio:9000"
+    bucket: "repository"
+    region: ""  # Required for AWS S3, optional for MinIO
+    access_key_env: "S3_ACCESS_KEY"
+    secret_key_env: "S3_SECRET_KEY"
+    use_ssl: false  # true for AWS S3/GCS, false for local MinIO
+
+cache:
+  enabled: true
+  max_size_gb: 100
+  # Tag-based caching strategy for Docker images:
+  # - "latest" tag: Cache but revalidate on pull (stale-while-revalidate)
+  # - Tags containing "nightly": Cache but revalidate on pull
+  # - All other tags: Cache forever (immutable)
+  # Blobs are always cached forever (content-addressable, immutable)
+  mutable_tag_patterns:
+    - "latest"
+    - "*nightly*"
+  mutable_tag_check_interval: "5m"
+
+auth:
+  enabled: true
+  flask_backend_url: "http://flask-backend:5000"
+  jwt_secret_env: "JWT_SECRET_KEY"
+  anonymous_pull: true  # Pull allowed without auth, push requires JWT
+
+upstreams:
+  # Built-in registries (pre-configured, always available)
+  builtin:
+    - name: "dockerhub"
+      url: "https://registry-1.docker.io"
+      auth_type: "none"
+    - name: "ghcr"
+      url: "https://ghcr.io"
+      auth_type: "token"
+      token_env: "GHCR_TOKEN"
+    - name: "quay"
+      url: "https://quay.io"
+      auth_type: "none"
+    - name: "gcr"
+      url: "https://gcr.io"
+      auth_type: "gcp"
+
+  # Custom registries are managed via flask-backend database
+  # and configured through WebUI
+  custom_source: "flask-backend"

@@ -1,0 +1,83 @@
+# MinIO Helm Chart Values
+# S3-compatible object storage for repo-worker
+
+replicaCount: 1
+
+image:
+  repository: minio/minio
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# MinIO credentials
+auth:
+  rootUser: minioadmin
+  rootPassword: ""  # Set via --set or secret
+  existingSecret: ""
+  secretKeys:
+    rootUser: root-user
+    rootPassword: root-password
+
+# Persistence configuration
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 100Gi
+
+# Service configuration
+service:
+  type: ClusterIP
+  apiPort: 9000
+  consolePort: 9001
+
+# Resource limits
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Security context
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+
+# Health checks
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Default buckets to create on startup
+defaultBuckets:
+  - name: repository
+    policy: none
+    purge: false

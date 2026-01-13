@@ -1,0 +1,14 @@
+apiVersion: v2
+name: minio
+description: MinIO S3-compatible object storage for repo-worker
+type: application
+version: 1.0.0
+appVersion: "latest"
+keywords:
+  - minio
+  - s3
+  - storage
+  - object-storage
+maintainers:
+  - name: Penguin Tech Inc
+    email: support@penguintech.io

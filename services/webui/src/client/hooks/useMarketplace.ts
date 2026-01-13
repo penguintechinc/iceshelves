@@ -178,6 +178,24 @@ export const useDockerRegistries = () => {
         return { success: true };
       });
     },
+    testConnection: async (registryId: string) => {
+      return api_state.execute(async () => {
+        const response = await api.post(
+          `/marketplace/docker-registries/${registryId}/test`,
+          {}
+        );
+        return response.data;
+      });
+    },
+    toggle: async (registryId: string, enabled: boolean) => {
+      return api_state.execute(async () => {
+        const response = await api.patch(
+          `/marketplace/docker-registries/${registryId}`,
+          { is_enabled: enabled }
+        );
+        return response.data;
+      });
+    },
   };
 };
 

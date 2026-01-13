@@ -174,6 +174,63 @@ services:
       - app-network
     restart: unless-stopped
 
+  # MinIO - S3-compatible storage backend for repo-worker
+  minio:
+    image: minio/minio:latest
+    container_name: iceshelves-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Repo-Worker - Multi-architecture Helm and Docker Repository Service
+  repo-worker:
+    build:
+      context: ./services/repo-worker
+      dockerfile: Dockerfile
+    container_name: iceshelves-repo-worker
+    environment:
+      - QUART_ENV=${QUART_ENV:-production}
+      - PORT=5050
+      - FLASK_BACKEND_URL=http://flask-backend:5000
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-jwt-secret}
+      # S3 storage config (MinIO default)
+      - S3_ENDPOINT=http://minio:9000
+      - S3_BUCKET=repository
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_USE_SSL=false
+      # Async worker config
+      - WORKERS=4
+    ports:
+      - "${REPO_WORKER_PORT:-5050}:5050"
+    depends_on:
+      flask-backend:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/healthz')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app-network
+
   # Nginx Reverse Proxy (optional - for production)
   nginx:
     image: nginx:alpine
@@ -206,6 +263,8 @@ volumes:
   grafana_data:
     driver: local
   nginx_logs:
+    driver: local
+  minio_data:
     driver: local
 
 networks:

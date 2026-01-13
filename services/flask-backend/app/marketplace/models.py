@@ -18,7 +18,7 @@ VALID_DEPLOYMENT_STATUSES = [
     "pending", "deploying", "running", "failed", "deleted", "degraded", "unknown"
 ]
 VALID_DEPENDENCY_TYPES = ["database", "cache", "storage", "messaging"]
-VALID_AUTH_TYPES = ["none", "basic", "bearer", "token"]
+VALID_AUTH_TYPES = ["none", "basic", "bearer", "token", "aws", "gcp", "azure"]
 VALID_HELM_VERSIONS = ["v2", "v3"]
 VALID_REGISTRY_TYPES = ["dockerhub", "ghcr", "ecr", "gcr", "acr", "quay", "custom"]
 VALID_WEBHOOK_TYPES = ["slack", "discord", "teams", "generic"]
@@ -95,6 +95,20 @@ def define_marketplace_tables(db: DAL) -> None:
               requires=IS_IN_SET(VALID_AUTH_TYPES)),
         Field("auth_username", "string", length=255),
         Field("auth_password_encrypted", "text"),
+        # AWS ECR specific fields
+        Field("aws_access_key_encrypted", "text"),
+        Field("aws_secret_key_encrypted", "text"),
+        Field("aws_region", "string", length=50),
+        # GCP GCR specific fields
+        Field("gcp_service_account_json_encrypted", "text"),
+        # Azure ACR specific fields
+        Field("azure_client_id", "string", length=255),
+        Field("azure_client_secret_encrypted", "text"),
+        Field("azure_tenant_id", "string", length=255),
+        # Connection test status
+        Field("last_connection_test", "datetime"),
+        Field("connection_test_success", "boolean"),
+        Field("connection_test_error", "text"),
         Field("created_by", "reference users"),
         Field("created_at", "datetime", default=datetime.utcnow),
         Field("updated_at", "datetime", default=datetime.utcnow,

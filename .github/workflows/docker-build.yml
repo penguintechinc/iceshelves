@@ -13,6 +13,7 @@ env:
   IMAGE_NAME_WEB: ${{ github.repository }}/web
   IMAGE_NAME_PYTHON: ${{ github.repository }}/python-app
   IMAGE_NAME_ICESHELVES: ${{ github.repository }}/iceshelves
+  IMAGE_NAME_REPO_WORKER: ${{ github.repository }}/repo-worker
 
 jobs:
   # Build matrix for different services
@@ -36,6 +37,10 @@ jobs:
           - name: iceshelves
             dockerfile: apps/iceshelves/Dockerfile
             context: .
+            platforms: linux/amd64,linux/arm64
+          - name: repo-worker
+            dockerfile: services/repo-worker/Dockerfile
+            context: services/repo-worker
             platforms: linux/amd64,linux/arm64
 
     steps:
@@ -103,7 +108,7 @@ jobs:
     if: github.event_name != 'pull_request'
     strategy:
       matrix:
-        service: [api, web, python-app, iceshelves]
+        service: [api, web, python-app, iceshelves, repo-worker]
 
     steps:
     - name: Determine scan tag
@@ -230,6 +235,42 @@ jobs:
               interval: 30s
               timeout: 10s
               retries: 3
+
+          minio:
+            image: minio/minio:latest
+            command: server /data --console-address ":9001"
+            ports:
+              - "9000:9000"
+              - "9001:9001"
+            environment:
+              - MINIO_ROOT_USER=minioadmin
+              - MINIO_ROOT_PASSWORD=minioadmin
+            healthcheck:
+              test: ["CMD", "mc", "ready", "local"]
+              interval: 10s
+              timeout: 5s
+              retries: 5
+
+          repo-worker:
+            image: ${{ env.REGISTRY }}/${{ github.repository }}/repo-worker:${{ github.ref_name }}
+            ports:
+              - "5050:5050"
+            environment:
+              - S3_ENDPOINT=http://minio:9000
+              - S3_BUCKET=repository
+              - S3_ACCESS_KEY=minioadmin
+              - S3_SECRET_KEY=minioadmin
+              - S3_USE_SSL=false
+              - JWT_SECRET_KEY=test-jwt-secret
+              - FLASK_BACKEND_URL=http://python-app:8000
+            depends_on:
+              minio:
+                condition: service_healthy
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:5050/healthz"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
         EOF
 
     - name: Start test environment
@@ -244,6 +285,7 @@ jobs:
         curl -f http://localhost:8080/metrics
         curl -f http://localhost:3000/health
         curl -f http://localhost:8000/health
+        curl -f http://localhost:5050/healthz
 
         # Test API functionality
         response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/status)
@@ -266,6 +308,20 @@ jobs:
           exit 1
         fi
 
+        # Test repo-worker OCI API
+        response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5050/v2/)
+        if [ "$response" != "200" ]; then
+          echo "Repo-worker OCI API failed with code: $response"
+          exit 1
+        fi
+
+        # Test repo-worker Helm index
+        response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5050/index.yaml)
+        if [ "$response" != "200" ]; then
+          echo "Repo-worker Helm index failed with code: $response"
+          exit 1
+        fi
+
         echo "All integration tests passed"
 
     - name: Check container logs on failure
@@ -281,6 +337,10 @@ jobs:
         docker-compose -f docker-compose.test.yml logs postgres
         echo "=== Redis Logs ==="
         docker-compose -f docker-compose.test.yml logs redis
+        echo "=== MinIO Logs ==="
+        docker-compose -f docker-compose.test.yml logs minio
+        echo "=== Repo Worker Logs ==="
+        docker-compose -f docker-compose.test.yml logs repo-worker
 
     - name: Cleanup test environment
       if: always()
@@ -368,6 +428,7 @@ jobs:
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/web:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/python-app:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/iceshelves:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
+        echo "- \`${{ env.REGISTRY }}/${{ github.repository }}/repo-worker:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "" >> CHANGELOG.md
         echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...${{ github.ref_name }}" >> CHANGELOG.md
 
@@ -393,7 +454,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const services = ['api', 'web', 'python-app', 'iceshelves'];
+          const services = ['api', 'web', 'python-app', 'iceshelves', 'repo-worker'];
 
           for (const service of services) {
             try {

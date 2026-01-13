@@ -63,15 +63,52 @@ export interface HelmRepository {
 }
 
 /**
+ * Registry authentication types
+ */
+export type RegistryAuthType = 'none' | 'basic' | 'bearer' | 'token' | 'aws' | 'gcp' | 'azure';
+
+/**
+ * Registry types
+ */
+export type RegistryType = 'dockerhub' | 'ghcr' | 'ecr' | 'gcr' | 'acr' | 'quay' | 'custom';
+
+/**
  * Docker Registry configuration
  */
 export interface DockerRegistry {
   id: string;
   name: string;
   url: string;
-  registry_type: 'public' | 'private' | 'ecr' | 'gcr';
+  registry_type: RegistryType;
   is_builtin: boolean;
   is_enabled: boolean;
+  auth_type: RegistryAuthType;
+  auth_username?: string;
+  // AWS ECR specific
+  aws_region?: string;
+  // Connection test status
+  last_connection_test?: string;
+  connection_test_success?: boolean;
+  connection_test_error?: string;
+}
+
+/**
+ * Docker Registry form data for creating/updating
+ */
+export interface DockerRegistryFormData {
+  name: string;
+  url: string;
+  registry_type: RegistryType;
+  auth_type: RegistryAuthType;
+  auth_username?: string;
+  auth_password?: string;
+  aws_access_key?: string;
+  aws_secret_key?: string;
+  aws_region?: string;
+  gcp_service_account_json?: string;
+  azure_client_id?: string;
+  azure_client_secret?: string;
+  azure_tenant_id?: string;
 }
 
 /**

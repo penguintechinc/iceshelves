@@ -47,6 +47,16 @@ class DockerRegistryRequest:
     auth_type: str = "none"
     auth_username: Optional[str] = None
     auth_password: Optional[str] = None
+    # AWS ECR fields
+    aws_access_key: Optional[str] = None
+    aws_secret_key: Optional[str] = None
+    aws_region: Optional[str] = None
+    # GCP GCR fields
+    gcp_service_account_json: Optional[str] = None
+    # Azure ACR fields
+    azure_client_id: Optional[str] = None
+    azure_client_secret: Optional[str] = None
+    azure_tenant_id: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -92,9 +102,14 @@ def _serialize_helm_repo(repo: dict) -> dict:
     }
 
 
-def _serialize_docker_registry(registry: dict) -> dict:
-    """Serialize Docker registry record to JSON-safe format."""
-    return {
+def _serialize_docker_registry(registry: dict, include_secrets: bool = False) -> dict:
+    """Serialize Docker registry record to JSON-safe format.
+
+    Args:
+        registry: The registry dict from database
+        include_secrets: If True, include decrypted credentials (for internal API)
+    """
+    result = {
         "id": registry.get("id"),
         "name": registry.get("name"),
         "url": registry.get("url"),
@@ -103,6 +118,16 @@ def _serialize_docker_registry(registry: dict) -> dict:
         "is_enabled": registry.get("is_enabled", True),
         "auth_type": registry.get("auth_type", "none"),
         "auth_username": registry.get("auth_username"),
+        "aws_region": registry.get("aws_region"),
+        "azure_client_id": registry.get("azure_client_id"),
+        "azure_tenant_id": registry.get("azure_tenant_id"),
+        "last_connection_test": (
+            registry.get("last_connection_test").isoformat()
+            if registry.get("last_connection_test")
+            else None
+        ),
+        "connection_test_success": registry.get("connection_test_success"),
+        "connection_test_error": registry.get("connection_test_error"),
         "created_at": (
             registry.get("created_at").isoformat()
             if registry.get("created_at")
@@ -114,6 +139,18 @@ def _serialize_docker_registry(registry: dict) -> dict:
             else None
         ),
     }
+
+    # Include secrets only for internal API (repo-worker)
+    if include_secrets:
+        result["auth_password"] = registry.get("auth_password_encrypted")
+        result["aws_access_key"] = registry.get("aws_access_key_encrypted")
+        result["aws_secret_key"] = registry.get("aws_secret_key_encrypted")
+        result["gcp_service_account_json"] = registry.get(
+            "gcp_service_account_json_encrypted"
+        )
+        result["azure_client_secret"] = registry.get("azure_client_secret_encrypted")
+
+    return result
 
 
 def _get_helm_repo_by_id(db, repo_id: int) -> Optional[dict]:
@@ -806,3 +843,118 @@ def delete_docker_registry(registry_id: int):
     db.commit()
 
     return jsonify({"message": "Docker registry deleted successfully"}), 200
+
+
+@repositories_bp.route("/docker/<int:registry_id>/test", methods=["POST"])
+@auth_required
+@maintainer_or_admin_required
+def test_docker_registry_connection(registry_id: int):
+    """Test connection to Docker registry (Maintainer+).
+
+    This endpoint tests connectivity to the specified Docker registry
+    using the configured credentials.
+
+    Args:
+        registry_id: The registry ID to test.
+
+    Returns:
+        JSON response with test result (200) or error (404/500).
+    """
+    import requests
+
+    db = g.db
+    registry = _get_docker_registry_by_id(db, registry_id)
+
+    if not registry:
+        return jsonify({"error": "Docker registry not found"}), 404
+
+    url = registry.get("url", "").rstrip("/")
+    auth_type = registry.get("auth_type", "none")
+
+    success = False
+    error_message = None
+
+    try:
+        # Build auth headers based on auth_type
+        headers = {}
+        auth = None
+
+        if auth_type == "basic":
+            username = registry.get("auth_username", "")
+            password = registry.get("auth_password_encrypted", "")
+            auth = (username, password) if username else None
+        elif auth_type == "token":
+            token = registry.get("auth_password_encrypted", "")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
+        # Test /v2/ endpoint (standard Docker registry API)
+        test_url = f"{url}/v2/"
+        response = requests.get(
+            test_url,
+            headers=headers,
+            auth=auth,
+            timeout=10,
+            allow_redirects=True,
+        )
+
+        # 200 or 401 (with auth challenge) indicates registry is reachable
+        if response.status_code in (200, 401):
+            success = True
+        else:
+            error_message = f"Unexpected status code: {response.status_code}"
+
+    except requests.exceptions.Timeout:
+        error_message = "Connection timeout"
+    except requests.exceptions.ConnectionError as e:
+        error_message = f"Connection error: {str(e)}"
+    except Exception as e:
+        error_message = f"Test failed: {str(e)}"
+
+    # Update connection test status in database
+    db(db.docker_registries.id == registry_id).update(
+        last_connection_test=datetime.utcnow(),
+        connection_test_success=success,
+        connection_test_error=error_message,
+    )
+    db.commit()
+
+    return jsonify({
+        "registry_id": registry_id,
+        "registry_name": registry.get("name"),
+        "success": success,
+        "error": error_message,
+        "tested_at": datetime.utcnow().isoformat(),
+    }), 200 if success else 500
+
+
+# ==================== Internal API Endpoints (for repo-worker) ====================
+
+
+@repositories_bp.route("/internal/registries", methods=["GET"])
+def get_internal_registries():
+    """Internal API: Get all enabled registries with credentials.
+
+    This endpoint is called by repo-worker to get registry configurations
+    including decrypted credentials for upstream authentication.
+
+    Security: This endpoint should be protected by internal service authentication
+    (e.g., internal JWT token or network policy in K8s).
+
+    Returns:
+        JSON response with all enabled registries including credentials.
+    """
+    # TODO: Add internal service authentication check
+    # For now, we trust that this endpoint is only accessible internally
+
+    db = g.db
+    registries = _list_docker_registries(db, enabled_only=True, include_builtin=True)
+
+    registries_data = [
+        _serialize_docker_registry(r, include_secrets=True) for r in registries
+    ]
+
+    return jsonify({
+        "registries": registries_data,
+        "total": len(registries_data),
+    }), 200
