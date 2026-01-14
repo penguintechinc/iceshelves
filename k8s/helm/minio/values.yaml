@@ -51,15 +51,15 @@ tolerations: []
 # Affinity
 affinity: {}
 
-# Security context
+# Container security context
 securityContext:
   runAsUser: 1000
   runAsGroup: 1000
-  fsGroup: 1000
 
 # Pod security context
 podSecurityContext:
   runAsNonRoot: true
+  fsGroup: 1000
 
 # Health checks
 livenessProbe:
