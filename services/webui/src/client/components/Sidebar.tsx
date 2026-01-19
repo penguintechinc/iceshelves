@@ -70,9 +70,16 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-dark-700">
-        {!collapsed && (
-          <span className="text-xl font-bold text-gold-gradient">WebUI</span>
-        )}
+        <div className="flex items-center">
+          <img
+            src="/logo.png"
+            alt="IceShelves"
+            className={`${collapsed ? 'w-8 h-8' : 'w-10 h-10'} transition-all`}
+          />
+          {!collapsed && (
+            <span className="ml-2 text-xl font-bold text-gold-gradient">IceShelves</span>
+          )}
+        </div>
         <button
           onClick={onToggle}
           className="p-2 rounded-lg hover:bg-dark-800 text-gold-400"

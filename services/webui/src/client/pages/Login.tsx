@@ -39,8 +39,13 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo/Title */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gold-gradient mb-2">WebUI Shell</h1>
-          <p className="text-dark-400">Sign in to your account</p>
+          <img
+            src="/logo.png"
+            alt="IceShelves Logo"
+            className="w-48 h-48 mx-auto mb-4"
+          />
+          <h1 className="text-4xl font-bold text-gold-gradient mb-2">IceShelves</h1>
+          <p className="text-dark-400">K8s Manager & Marketplace Solution</p>
         </div>
 
         {/* Login Form */}

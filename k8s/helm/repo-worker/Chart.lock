@@ -1,0 +1,6 @@
+dependencies:
+- name: minio
+  repository: file://../minio
+  version: 1.0.0
+digest: sha256:d671561b0f4141d17e76554f3b28346a4138aa33611abe72879585ed96ecd53a
+generated: "2026-01-14T08:54:45.977094633-06:00"

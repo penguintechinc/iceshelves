@@ -26,7 +26,7 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: true
+  readOnlyRootFilesystem: false
 
 service:
   type: ClusterIP
@@ -150,9 +150,13 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 2
 
-volumeMounts: []
+volumeMounts:
+  - name: databases
+    mountPath: /app/databases
 
-volumes: []
+volumes:
+  - name: databases
+    emptyDir: {}
 
 configMapData:
   db-type: "postgres"

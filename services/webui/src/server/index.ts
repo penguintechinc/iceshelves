@@ -33,10 +33,17 @@ app.get('/readyz', (_req: Request, res: Response) => {
 const flaskProxyOptions: Options = {
   target: config.flaskApiUrl,
   changeOrigin: true,
-  pathRewrite: undefined, // Keep original path
+  timeout: 120000, // 2 minute timeout
+  proxyTimeout: 120000,
+  // Express strips /api/v1 when mounted, so prepend it back
+  // Request: /api/v1/auth/login -> stripped to: /auth/login -> rewrite to: /api/v1/auth/login
+  pathRewrite: (path) => `/api/v1${path}`,
   on: {
     proxyReq: (proxyReq, req) => {
-      console.log(`[Flask Proxy] ${req.method} ${req.url} -> ${config.flaskApiUrl}`);
+      console.log(`[Flask Proxy] ${req.method} ${req.url} -> ${config.flaskApiUrl}${proxyReq.path}`);
+    },
+    proxyRes: (proxyRes, req, res) => {
+      console.log(`[Flask Proxy] Response ${proxyRes.statusCode} for ${req.method} ${req.url}`);
     },
     error: (err, _req, res) => {
       console.error('[Flask Proxy Error]', err);
@@ -72,7 +79,8 @@ const goProxyOptions: Options = {
 app.use('/api/go', createProxyMiddleware(goProxyOptions));
 
 // Flask backend proxy (for auth, users, standard APIs)
-app.use('/api', createProxyMiddleware(flaskProxyOptions));
+// Mount at /api/v1 to match flask-backend endpoints
+app.use('/api/v1', createProxyMiddleware(flaskProxyOptions));
 
 // Serve static files in production
 if (config.nodeEnv === 'production') {
