@@ -1,5 +1,48 @@
 # Project Template - Claude Code Context
 
+## 🚫 DO NOT MODIFY THIS FILE OR `.claude/` STANDARDS
+
+**These are centralized template files that will be overwritten when standards are updated.**
+
+- ❌ **NEVER edit** `CLAUDE.md`, `.claude/*.md`, `docs/STANDARDS.md`, or `docs/standards/*.md`
+- ✅ **CREATE NEW FILES** for app-specific context:
+  - `docs/APP_STANDARDS.md` - App-specific architecture, requirements, context
+  - `.claude/app.md` - App-specific rules for Claude (create if needed)
+  - `.claude/[feature].md` - Feature-specific context (create as needed)
+
+---
+
+## ⚠️ CRITICAL RULES - READ FIRST
+
+**Language & Versions:**
+- **Python 3.13** default (3.12+ minimum) - use for most applications
+- **Go 1.24.x** only for >10K req/sec (1.23.x fallback allowed)
+- **Node.js 18+** for React frontend
+
+**Database (MANDATORY):**
+- **SQLAlchemy**: Schema creation and Alembic migrations ONLY
+- **PyDAL**: ALL runtime database operations - NO EXCEPTIONS
+- Support ALL: PostgreSQL, MySQL, MariaDB Galera, SQLite
+
+**Git Rules:**
+- **NEVER commit** unless explicitly requested
+- **NEVER push** to remote repositories
+- Run security scans before commit (bandit, gosec, npm audit)
+
+**Code Quality:**
+- ALL code must pass linting before commit
+- No hardcoded secrets or credentials
+- Input validation mandatory
+
+**Architecture:**
+- Web UI and API are ALWAYS separate containers
+- Flask-Security-Too mandatory for authentication
+- REST APIs use `/api/v{major}/endpoint` versioning
+
+📚 **Detailed Standards**: See `.claude/` directory for language and service-specific rules
+
+---
+
 **⚠️ Important**: Application-specific context should be added to `docs/APP_STANDARDS.md` instead of this file. This allows the template CLAUDE.md to be updated across all projects without losing app-specific information. See `docs/APP_STANDARDS.md` for app-specific architecture, requirements, and context.
 
 ## Project Overview
@@ -29,6 +72,7 @@ This is a comprehensive project template incorporating best practices and patter
   - Network-intensive services
   - Low-latency requirements (<10ms)
   - CPU-bound operations requiring maximum throughput
+  - Go 1.23.x acceptable as fallback if 1.24.x compatibility constraints exist
 
 **Python Stack:**
 - **Python**: 3.13 for all applications (3.12+ minimum)
@@ -46,7 +90,7 @@ This is a comprehensive project template incorporating best practices and patter
 - **JavaScript/TypeScript**: Modern ES2022+ standards
 
 **Go Stack (When Required):**
-- **Go**: 1.24.x (latest patch version, minimum 1.24.2)
+- **Go**: 1.24.x (latest patch version, minimum 1.24.2); Go 1.23.x acceptable as fallback if compatibility constraints exist
 - **Database**: Use DAL with PostgreSQL/MySQL cross-support (e.g., GORM, sqlx)
 - Use only for traffic-intensive applications
 
@@ -67,13 +111,13 @@ This is a comprehensive project template incorporating best practices and patter
   - **MariaDB Galera**: Cluster support with WSREP, auto-increment, transaction handling
   - **SQLite**: Development and lightweight deployments
 - **Database Libraries (Python)**:
-  - **SQLAlchemy**: Used ONLY for database initialization and schema creation
-  - **PyDAL**: Used for ALL runtime database operations and migrations
+  - **SQLAlchemy + Alembic**: Database schema definition and version-controlled migrations
+  - **PyDAL**: Used for ALL runtime database operations only
   - `DB_TYPE` must match PyDAL connection string prefixes exactly
 - **Database Libraries (Go)**: GORM or sqlx (mandatory for cross-database support)
   - Must support PostgreSQL, MySQL/MariaDB, and SQLite
   - Stable, well-maintained library required
-- **Migrations**: PyDAL handles all migrations via `migrate=True`
+- **Migrations**: Alembic for schema migrations, PyDAL for runtime operations
 - **MariaDB Galera Support**: Handle Galera-specific requirements (WSREP, auto-increment, transactions)
 
 📚 **Supported DB_TYPE Values**: See [Database Standards](docs/standards/DATABASE.md) for complete list and configuration details.
@@ -149,7 +193,7 @@ project-name/
 ├── .github/             # CI/CD pipelines and templates
 │   └── workflows/       # GitHub Actions for each container
 ├── services/            # Microservices (separate containers by default)
-│   ├── flask-backend/   # Flask + PyDAL backend (auth, users, standard APIs)
+│   ├── flask-backend/   # Flask + PyDAL teams API backend (auth, teams, users, standard APIs)
 │   ├── go-backend/      # Go high-performance backend (XDP/AF_XDP, NUMA)
 │   ├── webui/           # Node.js + React frontend shell
 │   └── connector/       # Integration services (placeholder)
@@ -175,11 +219,12 @@ project-name/
 
 | Container | Purpose | When to Use |
 |-----------|---------|-------------|
-| **flask-backend** | Standard APIs, auth, CRUD | <10K req/sec, business logic |
+| **teams-api** (flask-backend) | Standard APIs, auth, teams, user management | <10K req/sec, business logic |
 | **go-backend** | High-performance networking | >10K req/sec, <10ms latency |
 | **webui** | Node.js + React frontend | All frontend applications |
 
 **Default Roles**: Admin (full access), Maintainer (read/write, no user mgmt), Viewer (read-only)
+**Team Roles**: Owner, Admin, Member, Viewer (team-scoped permissions)
 
 📚 **Architecture diagram and details**: [Architecture Standards](docs/standards/ARCHITECTURE.md)
 
@@ -613,6 +658,15 @@ Key integration patterns documented:
 **Build Tags**: `beta-<epoch64>` (main) | `alpha-<epoch64>` (other) | `vX.X.X-beta` (version release) | `vX.X.X` (tagged release)
 
 **Version**: `.version` file in root, semver format, monitored by all workflows
+
+**Deployment Hosts**:
+- **Beta/Development**: `https://{repo_name_lowercase}.penguintech.io` (if online)
+  - Example: `project-template` → `https://project-template.penguintech.io`
+  - Deployed from `main` branch with `beta-*` tags
+- **Production**: Either custom domain or PenguinCloud subdomain
+  - **Custom Domain**: Application-specific (e.g., `https://waddlebot.io`)
+  - **PenguinCloud**: `https://{repo_name_lowercase}.penguincloud.io`
+  - Deployed from tagged releases (`vX.X.X`)
 
 ### Pre-Commit Checklist
 
